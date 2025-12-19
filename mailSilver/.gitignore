@@ -26,3 +26,7 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+.dist
+
+# package-lock.json
+package-lock.json
