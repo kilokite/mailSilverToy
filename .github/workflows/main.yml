@@ -24,11 +24,10 @@ jobs:
           - name: Dependencies
             uses: appleboy/ssh-action@v1
             with:
-              host: ${{ secrets.HOST }}
-              username: ${{ secrets.USERNAME }}
+              host: ${{ secrets.SSH_HOST }}
+              username: ${{ secrets.SSH_USERNAME }}
               key: ${{ secrets.SSH_KEY }}
-              port: ${{ secrets.PORT }}
+              port: ${{ secrets.SSH_PORT }}
               script: |
                 cd /www/wwwroot/zocsrd/__node_project/mail/
                 npm install
-                echo ok
