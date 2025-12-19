@@ -16,7 +16,7 @@ app.get('/web_hook', (c) => {
 
 serve({
   fetch: app.fetch,
-  port: 3000
+  port: 23879
 }, (info) => {
   console.log(`Server is running on http://localhost:${info.port}`)
 })
