@@ -19,5 +19,16 @@ jobs:
               username: ${{ secrets.SSH_USERNAME }}
               key: ${{ secrets.SSH_KEY }}
               port: ${{ secrets.SSH_PORT }}
-              source: ${{ steps.changed-files.outputs.files }}
+              source: "**"
               target: /www/wwwroot/zocsrd/__node_project/mail/
+          - name: Dependencies
+            uses: appleboy/ssh-action@v1
+            with:
+              host: ${{ secrets.HOST }}
+              username: ${{ secrets.USERNAME }}
+              key: ${{ secrets.SSH_KEY }}
+              port: ${{ secrets.PORT }}
+              script: |
+                cd /www/wwwroot/zocsrd/__node_project/mail/
+                npm install
+                echo ok
