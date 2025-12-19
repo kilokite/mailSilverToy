@@ -1,0 +1,23 @@
+name: toSilverDeploy
+on: [push]
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v4
+          - name: Get changed files
+            id: changed-files
+            uses: tj-actions/changed-files@v35
+            with:
+              since_last_remote_commit: true
+              separator: ","
+          - name: Deploy
+            uses: appleboy/scp-action@v1
+            with:
+              host: ${{ secrets.SSH_HOST }}
+              username: ${{ secrets.SSH_USERNAME }}
+              key: ${{ secrets.SSH_KEY }}
+              port: ${{ secrets.SSH_PORT }}
+              source: ${{ steps.changed-files.outputs.files }}
+              target: /www/wwwroot/zocsrd/__node_project/mail/
