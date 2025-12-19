@@ -31,6 +31,6 @@ jobs:
               script: |
                 cd /www/wwwroot/zocsrd/__node_project/mail/mailSilver
                 npm config set cache ~/.npm-cache
-                npm install
+                npm install -D
                 npm run build
                 echo ok
