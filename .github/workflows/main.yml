@@ -29,5 +29,7 @@ jobs:
               key: ${{ secrets.SSH_KEY }}
               port: ${{ secrets.SSH_PORT }}
               script: |
-                cd /www/wwwroot/zocsrd/__node_project/mail/
+                cd /www/wwwroot/zocsrd/__node_project/mail/mailSilver
                 npm install
+                npm run build
+                echo ok
