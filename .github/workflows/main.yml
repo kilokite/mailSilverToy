@@ -21,6 +21,7 @@ jobs:
               port: ${{ secrets.SSH_PORT }}
               source: "**"
               target: /www/wwwroot/zocsrd/__node_project/mail/
+              rm: true
           - name: Dependencies
             uses: appleboy/ssh-action@v1
             with:
