@@ -4,34 +4,13 @@ jobs:
     build:
         runs-on: ubuntu-latest
         steps:
-          - name: Checkout
-            uses: actions/checkout@v4
-          - name: Get changed files
-            id: changed-files
-            uses: tj-actions/changed-files@v35
-            with:
-              since_last_remote_commit: true
-              separator: ","
-          - name: Deploy
-            uses: appleboy/scp-action@v1
-            with:
-              host: ${{ secrets.SSH_HOST }}
-              username: ${{ secrets.SSH_USERNAME }}
-              key: ${{ secrets.SSH_KEY }}
-              port: ${{ secrets.SSH_PORT }}
-              source: "**"
-              target: /www/wwwroot/zocsrd/__node_project/mail/
-              rm: true
-          - name: Dependencies
-            uses: appleboy/ssh-action@v1
-            with:
-              host: ${{ secrets.SSH_HOST }}
-              username: ${{ secrets.SSH_USERNAME }}
-              key: ${{ secrets.SSH_KEY }}
-              port: ${{ secrets.SSH_PORT }}
-              script: |
-                cd /www/wwwroot/zocsrd/__node_project/mail/mailSilver
-                npm config set cache ~/.npm-cache
-                npm install
-                npm run build
-                echo ok
+            - name: Trigger webhook
+              env:
+                  WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+              run: |
+                  if [ -n "$WEBHOOK_URL" ]; then
+                      curl -X GET "${WEBHOOK_URL}" || echo "Webhook trigger failed"
+                  else
+                      echo "WEBHOOK_URL secret not set, skipping webhook trigger"
+                  fi  
+              continue-on-error: true
