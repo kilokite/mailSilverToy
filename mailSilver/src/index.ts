@@ -4,7 +4,7 @@ import { Hono } from 'hono'
 const app = new Hono()
 
 app.get('/', (c) => {
-  return c.text('Hello Hono welcome to mailSilver!')
+  return c.text('Hello Hono welcome to mailSilver!34234234')
 })
 let info = {};
 app.get('/web_hook', (c) => {
