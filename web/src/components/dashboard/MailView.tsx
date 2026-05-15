@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { rawEmailUrl, type EmailDetail } from "@/lib/api"
+import { EmailMetaDialog } from "@/components/dashboard/EmailMetaDialog"
 
 function initials(name: string | null | undefined) {
   const s = (name ?? "").trim()
@@ -122,6 +123,7 @@ export function MailView({
             <Download className="h-4 w-4" />
           </Button>
         </a>
+        <EmailMetaDialog mail={mail} />
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="sm" className="gap-1.5">
             <Reply className="h-4 w-4" />
