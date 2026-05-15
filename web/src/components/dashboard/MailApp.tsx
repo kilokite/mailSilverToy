@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
 import { Sidebar, type Folder } from "@/components/dashboard/Sidebar"
 import { MailList } from "@/components/dashboard/MailList"
 import { MailView } from "@/components/dashboard/MailView"
-import { AuthScreen } from "@/components/auth/AuthScreen"
 import {
   getEmail,
   listEmails,
@@ -24,8 +23,9 @@ const folderLabels: Record<Folder, string> = {
 
 type LiveStatus = "connecting" | "live" | "offline"
 
-function MailApp({ user }: { user: AuthUser }) {
+export function MailApp({ user }: { user: AuthUser }) {
   const { logout } = useAuth()
+  const navigate = useNavigate()
   const [folder, setFolder] = useState<Folder>("inbox")
 
   const [items, setItems] = useState<EmailListItem[]>([])
@@ -129,7 +129,12 @@ function MailApp({ user }: { user: AuthUser }) {
           setSelectedId(null)
           setDetail(null)
         }}
-        onLogout={() => void logout()}
+        onLogout={() =>
+          void (async () => {
+            await logout()
+            void navigate({ to: "/login", replace: true })
+          })()
+        }
       />
       <MailList
         title={folderLabels[folder]}
@@ -144,21 +149,3 @@ function MailApp({ user }: { user: AuthUser }) {
     </div>
   )
 }
-
-function App() {
-  const auth = useAuth()
-  if (auth.status === "loading") {
-    return (
-      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        正在恢复会话…
-      </div>
-    )
-  }
-  if (auth.status !== "authenticated") {
-    return <AuthScreen />
-  }
-  return <MailApp user={auth.user} />
-}
-
-export default App

@@ -20,7 +20,7 @@ type AuthState =
   | { status: "anonymous"; user: null }
   | { status: "authenticated"; user: AuthUser }
 
-type AuthContextValue = AuthState & {
+export type AuthContextValue = AuthState & {
   login: (prefix: string, password: string) => Promise<void>
   register: (prefix: string, password: string) => Promise<void>
   logout: () => Promise<void>
