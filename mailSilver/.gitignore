@@ -27,6 +27,13 @@ lerna-debug.log*
 # misc
 .DS_Store
 dist
+public
+
+# sqlite
+data/
+*.db
+*.db-shm
+*.db-wal
 
 # package-lock.json
 package-lock.json
