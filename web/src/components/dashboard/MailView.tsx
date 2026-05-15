@@ -36,14 +36,29 @@ function formatBytes(n: number) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
+const SCROLLBAR_HIDE =
+  "overflow-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+
+function wrapHtmlForIframe(html: string) {
+  const style =
+    "<style>html,body{margin:0;overflow:auto;scrollbar-width:none;-ms-overflow-style:none}body::-webkit-scrollbar{display:none}</style>"
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${style}`)
+  }
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html([^>]*)>/i, `<html$1><head>${style}</head>`)
+  }
+  return `<!DOCTYPE html><html><head>${style}</head><body>${html}</body></html>`
+}
+
 function HtmlBody({ html }: { html: string }) {
   // sandbox 默认禁用脚本/表单/导航/弹窗，避免邮件 HTML 攻击宿主页
   return (
     <iframe
       title="email-html"
-      className="h-full w-full rounded-md border bg-white"
+      className="h-full w-full bg-transparent"
       sandbox=""
-      srcDoc={html}
+      srcDoc={wrapHtmlForIframe(html)}
     />
   )
 }
@@ -103,7 +118,7 @@ export function MailView({
   if (!mail) return null
 
   return (
-    <section className="flex flex-1 flex-col">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-14 items-center gap-1 px-4">
         <Button variant="ghost" size="icon" title="归档">
           <Archive className="h-4 w-4" />
@@ -191,11 +206,13 @@ export function MailView({
             </p>
           </div>
         ) : mail.parsed?.html ? (
-          <div className="flex-1 min-h-0">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <HtmlBody html={mail.parsed.html} />
           </div>
         ) : mail.parsed?.text ? (
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+          <pre
+            className={`min-h-0 flex-1 whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90 ${SCROLLBAR_HIDE}`}
+          >
 {mail.parsed.text}
           </pre>
         ) : (
