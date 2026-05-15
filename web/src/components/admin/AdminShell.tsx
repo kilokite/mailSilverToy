@@ -1,10 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router"
-import { LayoutDashboard, Mail, Users } from "lucide-react"
+import { Mail, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { AdminUsersPage } from "@/components/admin/AdminUsersPage"
+import logoUrl from "@/assets/logo.png"
 
 export function AdminShell() {
   const { logout } = useAuth()
@@ -14,9 +15,12 @@ export function AdminShell() {
     <div className="flex h-svh w-full overflow-hidden bg-background text-foreground">
       <aside className="hidden w-56 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
         <div className="flex h-14 items-center gap-2 px-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <LayoutDashboard className="h-4 w-4" />
-          </div>
+          <img
+            src={logoUrl}
+            alt="mailSilver"
+            className="h-8 w-8 shrink-0 object-contain"
+            style={{ imageRendering: "pixelated" }}
+          />
           <span className="text-sm font-semibold">后台管理</span>
         </div>
         <Separator />

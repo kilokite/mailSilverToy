@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
-import { Mail, Loader2, AlertTriangle } from "lucide-react"
+import { Loader2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
+import logoUrl from "@/assets/logo.png"
 
 const MAIL_DOMAIN = "@kt.sb"
 
@@ -47,6 +48,7 @@ export function AuthScreen() {
   function switchMode(next: Mode) {
     setMode(next)
     setError(null)
+    setPassword("")
     setConfirm("")
   }
 
@@ -77,9 +79,12 @@ export function AuthScreen() {
     <div className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
       <div className="w-full max-w-md rounded-xl border bg-card p-8 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Mail className="h-5 w-5" />
-          </div>
+          <img
+            src={logoUrl}
+            alt="mailSilver"
+            className="h-10 w-10 shrink-0 object-contain"
+            style={{ imageRendering: "pixelated" }}
+          />
           <div>
             <h1 className="text-base font-semibold leading-tight">mailSilver</h1>
             {/* <p className="text-xs text-muted-foreground">

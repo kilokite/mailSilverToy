@@ -4,7 +4,6 @@ import {
   FileText,
   Star,
   Trash2,
-  Mail,
   PenSquare,
   LogOut,
   Wifi,
@@ -20,6 +19,7 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import type { AuthUser } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import logoUrl from "@/assets/logo.png"
 
 export type Folder = "inbox" | "sent" | "drafts" | "starred" | "trash"
 
@@ -70,9 +70,12 @@ export function Sidebar({
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
       <div className="flex h-14 items-center gap-2 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Mail className="h-4 w-4" />
-        </div>
+        <img
+          src={logoUrl}
+          alt="mailSilver"
+          className="h-8 w-8 shrink-0 object-contain"
+          style={{ imageRendering: "pixelated" }}
+        />
         <span className="text-sm font-semibold">mailSilver</span>
         <span
           className={cn(
