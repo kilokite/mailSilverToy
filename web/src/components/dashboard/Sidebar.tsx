@@ -11,12 +11,15 @@ import {
   WifiOff,
   Copy,
   Check,
+  LayoutDashboard,
 } from "lucide-react"
 import { useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import type { AuthUser } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 
 export type Folder = "inbox" | "sent" | "drafts" | "starred" | "trash"
 
@@ -51,6 +54,7 @@ export function Sidebar({
   inboxCount: number
   onLogout: () => void
 }) {
+  const { adminAccess } = useAuth()
   const [copied, setCopied] = useState(false)
 
   async function copyEmail() {
@@ -141,6 +145,23 @@ export function Sidebar({
             </button>
           )
         })}
+        {adminAccess ? (
+          <div className="px-1 pt-3">
+            <p className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              管理
+            </p>
+            <Link
+              to="/admin"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              )}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>后台管理</span>
+            </Link>
+          </div>
+        ) : null}
       </nav>
 
       <Separator />

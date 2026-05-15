@@ -90,3 +90,31 @@ export function touchLastLogin(userId: string): void {
     .prepare(`UPDATE users SET last_login_at = ? WHERE id = ?`)
     .run(new Date().toISOString(), userId)
 }
+
+export type UserWithEmailCount = {
+  id: string
+  prefix: string
+  created_at: string
+  last_login_at: string | null
+  email_count: number
+}
+
+/** 列出所有注册用户及作为收件人关联到的邮件数量（按注册时间倒序） */
+export function listUsersWithEmailCounts(): UserWithEmailCount[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT u.id, u.prefix, u.created_at, u.last_login_at,
+              COUNT(DISTINCT r.email_id) AS email_count
+         FROM users u
+         LEFT JOIN email_recipients r ON r.prefix = LOWER(u.prefix)
+        GROUP BY u.id, u.prefix, u.created_at, u.last_login_at
+        ORDER BY u.created_at DESC`,
+    )
+    .all() as Array<
+    Omit<UserWithEmailCount, 'email_count'> & { email_count: number | bigint }
+  >
+  return rows.map((r) => ({
+    ...r,
+    email_count: Number(r.email_count),
+  }))
+}

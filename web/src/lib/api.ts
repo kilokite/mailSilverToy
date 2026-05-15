@@ -55,6 +55,20 @@ export type AuthUser = {
   email: string
 }
 
+export type MeResponse = {
+  user: AuthUser | null
+  admin_access: boolean
+}
+
+export type AdminUserRow = {
+  id: string
+  prefix: string
+  email: string
+  created_at: string
+  last_login_at: string | null
+  email_count: number
+}
+
 class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -111,21 +125,31 @@ export function rawEmailUrl(id: string) {
 }
 
 export function getMe() {
-  return request<{ user: AuthUser | null }>(`/api/auth/me`)
+  return request<MeResponse>(`/api/auth/me`)
 }
 
 export function login(prefix: string, password: string) {
-  return request<{ ok: true; user: AuthUser }>(`/api/auth/login`, {
-    method: "POST",
-    body: JSON.stringify({ prefix, password }),
-  })
+  return request<{ ok: true; user: AuthUser; admin_access: boolean }>(
+    `/api/auth/login`,
+    {
+      method: "POST",
+      body: JSON.stringify({ prefix, password }),
+    },
+  )
 }
 
 export function register(prefix: string, password: string) {
-  return request<{ ok: true; user: AuthUser }>(`/api/auth/register`, {
-    method: "POST",
-    body: JSON.stringify({ prefix, password }),
-  })
+  return request<{ ok: true; user: AuthUser; admin_access: boolean }>(
+    `/api/auth/register`,
+    {
+      method: "POST",
+      body: JSON.stringify({ prefix, password }),
+    },
+  )
+}
+
+export function listAdminUsers() {
+  return request<{ users: AdminUserRow[] }>(`/api/admin/users`)
 }
 
 export function logout() {

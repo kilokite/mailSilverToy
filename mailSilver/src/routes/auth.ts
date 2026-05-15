@@ -46,6 +46,11 @@ function publicEmail(prefix: string): string {
   return `${prefix}${config.email.domain}`
 }
 
+function adminAccessForPrefix(prefix: string): boolean {
+  const ap = config.auth.adminPrefix
+  return Boolean(ap && prefix.toLowerCase() === ap)
+}
+
 auth.post('/register', async (c) => {
   const body = readBody(await c.req.json().catch(() => null))
   if (!body) return c.json({ error: 'invalid body' }, 400)
@@ -77,6 +82,7 @@ auth.post('/register', async (c) => {
         prefix: user.prefix,
         email: publicEmail(user.prefix),
       },
+      admin_access: adminAccessForPrefix(user.prefix),
     })
   } catch (e) {
     if (e instanceof PrefixTakenError) {
@@ -118,6 +124,7 @@ auth.post('/login', async (c) => {
       prefix: user.prefix,
       email: publicEmail(user.prefix),
     },
+    admin_access: adminAccessForPrefix(user.prefix),
   })
 })
 
@@ -131,13 +138,14 @@ auth.post('/logout', (c) => {
 auth.get('/me', (c) => {
   const token = readSessionToken(c)
   const user = resolveUser(token)
-  if (!user) return c.json({ user: null })
+  if (!user) return c.json({ user: null, admin_access: false })
   return c.json({
     user: {
       id: user.id,
       prefix: user.prefix,
       email: publicEmail(user.prefix),
     },
+    admin_access: adminAccessForPrefix(user.prefix),
   })
 })
 
@@ -150,6 +158,7 @@ auth.get('/session', requireUser, (c) => {
       prefix: user.prefix,
       email: publicEmail(user.prefix),
     },
+    admin_access: adminAccessForPrefix(user.prefix),
   })
 })
 

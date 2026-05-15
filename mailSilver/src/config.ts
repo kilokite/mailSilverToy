@@ -19,6 +19,11 @@ export interface AppConfig {
     cookieSecure: boolean
     /** Cookie 名 */
     cookieName: string
+    /**
+     * 与该前缀（忽略大小写）一致的用户可访问 /api/admin/*。
+     * 未设置或为空则管理接口不可用。
+     */
+    adminPrefix: string | null
   }
 }
 
@@ -50,6 +55,10 @@ export const config: AppConfig = {
     sessionTtlMs: Number(process.env.SESSION_TTL_MS ?? defaultSessionTtl),
     cookieSecure: parseBool(process.env.COOKIE_SECURE, process.env.NODE_ENV === 'production'),
     cookieName: process.env.COOKIE_NAME ?? 'mail_session',
+    adminPrefix: (() => {
+      const raw = process.env.ADMIN_PREFIX?.trim().toLowerCase()
+      return raw ? raw : null
+    })(),
   },
 }
 

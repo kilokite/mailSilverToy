@@ -16,9 +16,9 @@ import {
 } from "@/lib/api"
 
 type AuthState =
-  | { status: "loading"; user: null }
-  | { status: "anonymous"; user: null }
-  | { status: "authenticated"; user: AuthUser }
+  | { status: "loading"; user: null; adminAccess: false }
+  | { status: "anonymous"; user: null; adminAccess: false }
+  | { status: "authenticated"; user: AuthUser; adminAccess: boolean }
 
 export type AuthContextValue = AuthState & {
   login: (prefix: string, password: string) => Promise<void>
@@ -30,18 +30,22 @@ export type AuthContextValue = AuthState & {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({ status: "loading", user: null })
+  const [state, setState] = useState<AuthState>({
+    status: "loading",
+    user: null,
+    adminAccess: false,
+  })
 
   const refresh = useCallback(async () => {
     try {
-      const { user } = await getMe()
+      const { user, admin_access } = await getMe()
       setState(
         user
-          ? { status: "authenticated", user }
-          : { status: "anonymous", user: null },
+          ? { status: "authenticated", user, adminAccess: admin_access }
+          : { status: "anonymous", user: null, adminAccess: false },
       )
     } catch {
-      setState({ status: "anonymous", user: null })
+      setState({ status: "anonymous", user: null, adminAccess: false })
     }
   }, [])
 
@@ -50,20 +54,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const login = useCallback(async (prefix: string, password: string) => {
-    const { user } = await loginApi(prefix, password)
-    setState({ status: "authenticated", user })
+    const { user, admin_access } = await loginApi(prefix, password)
+    setState({ status: "authenticated", user, adminAccess: admin_access })
   }, [])
 
   const register = useCallback(async (prefix: string, password: string) => {
-    const { user } = await registerApi(prefix, password)
-    setState({ status: "authenticated", user })
+    const { user, admin_access } = await registerApi(prefix, password)
+    setState({ status: "authenticated", user, adminAccess: admin_access })
   }, [])
 
   const logout = useCallback(async () => {
     try {
       await logoutApi()
     } finally {
-      setState({ status: "anonymous", user: null })
+      setState({ status: "anonymous", user: null, adminAccess: false })
     }
   }, [])
 
