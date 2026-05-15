@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
 import { AuthScreen } from "@/components/auth/AuthScreen"
+import { useAuth } from "@/lib/auth"
 
 export const Route = createFileRoute("/login")({
   beforeLoad: ({ context }) => {
@@ -12,9 +13,11 @@ export const Route = createFileRoute("/login")({
 })
 
 function LoginRoute() {
-  const { auth } = Route.useRouteContext()
+  const auth = useAuth()
   const navigate = useNavigate()
 
+  // 兜底：若 invalidate 还未来得及触发 beforeLoad，
+  // 这里也能把已认证用户带回首页。
   useEffect(() => {
     if (auth.status === "authenticated") {
       void navigate({ to: "/", replace: true })

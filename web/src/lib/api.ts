@@ -77,6 +77,29 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * 401 全局回调：由 AuthProvider 在挂载时注册，
+ * 当除 auth 自身端点外的请求返回 401 时被触发，
+ * 用于让会话过期的用户自动回到匿名态（被路由守卫踢回 /login）。
+ */
+let onUnauthorized: (() => void) | null = null
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn
+}
+
+// 这些是 auth 自身端点，401 由调用方自行处理（如登录失败显示错误），
+// 不应触发"会话过期"的全局副作用。
+const AUTH_PATH_PREFIXES = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/me",
+  "/api/auth/logout",
+]
+
+function isAuthPath(path: string) {
+  return AUTH_PATH_PREFIXES.some((p) => path.startsWith(p))
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
@@ -89,6 +112,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers,
   })
   if (!res.ok) {
+    if (res.status === 401 && !isAuthPath(path)) {
+      onUnauthorized?.()
+    }
     let message = `HTTP ${res.status}`
     const text = await res.text().catch(() => "")
     if (text) {

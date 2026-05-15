@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router"
 import { MailApp } from "@/components/dashboard/MailApp"
+import { useAuth } from "@/lib/auth"
 
 export const Route = createFileRoute("/")({
   beforeLoad: ({ context }) => {
@@ -11,7 +12,7 @@ export const Route = createFileRoute("/")({
 })
 
 function IndexRoute() {
-  const { auth } = Route.useRouteContext()
+  const auth = useAuth()
   if (auth.status !== "authenticated") return null
   return <MailApp user={auth.user} />
 }

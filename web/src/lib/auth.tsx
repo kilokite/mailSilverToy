@@ -12,6 +12,7 @@ import {
   login as loginApi,
   logout as logoutApi,
   register as registerApi,
+  setUnauthorizedHandler,
   type AuthUser,
 } from "@/lib/api"
 
@@ -52,6 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // 业务接口收到 401 时，认为会话过期，切回匿名态；
+  // 路由守卫会在 RouterShell 的 invalidate 后把用户带回 /login。
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setState((prev) =>
+        prev.status === "anonymous"
+          ? prev
+          : { status: "anonymous", user: null, adminAccess: false },
+      )
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
 
   const login = useCallback(async (prefix: string, password: string) => {
     const { user, admin_access } = await loginApi(prefix, password)
