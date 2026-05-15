@@ -190,14 +190,14 @@ export function MailView({
               查看。
             </p>
           </div>
-        ) : mail.parsed?.text ? (
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-{mail.parsed.text}
-          </pre>
         ) : mail.parsed?.html ? (
           <div className="flex-1 min-h-0">
             <HtmlBody html={mail.parsed.html} />
           </div>
+        ) : mail.parsed?.text ? (
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+{mail.parsed.text}
+          </pre>
         ) : (
           <p className="text-sm text-muted-foreground">（邮件没有可显示的正文）</p>
         )}
