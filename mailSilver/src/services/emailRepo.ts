@@ -19,6 +19,7 @@ export type EmailListItem = {
   subject: string | null
   from_addr: string | null
   from_name: string | null
+  date: string | null
 }
 
 export type ListEmailParams = {
@@ -46,7 +47,7 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
     args.push(before)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const sql = `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
+  const sql = `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date
                  FROM emails e
                  LEFT JOIN emails_parsed p ON p.email_id = e.id
                  ${whereSql}
@@ -59,7 +60,7 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
 export function getEmailListItem(id: string): EmailListItem | null {
   const row = getDb()
     .prepare(
-      `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
+      `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date
          FROM emails e
          LEFT JOIN emails_parsed p ON p.email_id = e.id
         WHERE e.id = ?`,

@@ -16,6 +16,7 @@ export type EmailListItem = {
   subject: string | null
   from_addr: string | null
   from_name: string | null
+  date: string | null
 }
 
 export type AddrLite = { name?: string; address?: string }

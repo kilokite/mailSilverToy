@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Search, AlertTriangle, Clock } from "lucide-react"
+import { Search, AlertTriangle, Clock, Zap } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
@@ -31,6 +31,21 @@ function formatTime(iso: string) {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
   }
   return `${d.getMonth() + 1}-${d.getDate()}`
+}
+
+const FAST_THRESHOLD_SEC = 7
+
+function fastDeliveryDelta(date: string | null, receivedAt: string): number | null {
+  if (!date) return null
+  const sent = new Date(date).getTime()
+  const received = new Date(receivedAt).getTime()
+  if (Number.isNaN(sent) || Number.isNaN(received)) return null
+  const diffSec = Math.abs(received - sent) / 1000
+  return diffSec < FAST_THRESHOLD_SEC ? diffSec : null
+}
+
+function formatDeltaSec(sec: number) {
+  return Number.isInteger(sec) ? `${sec}s` : `${sec.toFixed(1)}s`
 }
 
 export function MailList({
@@ -111,6 +126,7 @@ export function MailList({
             const active = m.id === selectedId
             const isError = m.parse_status === "error"
             const isPending = m.parse_status === "pending"
+            const fastDelta = fastDeliveryDelta(m.date, m.received_at)
             return (
               <li key={m.id}>
                 <button
@@ -149,6 +165,12 @@ export function MailList({
                         <span className="ml-auto inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px]">
                           <Clock className="h-3 w-3" />
                           解析中
+                        </span>
+                      ) : null}
+                      {fastDelta != null ? (
+                        <span className="ml-auto inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+                          <Zap className="h-3 w-3" />
+                          {formatDeltaSec(fastDelta)}
                         </span>
                       ) : null}
                     </div>
