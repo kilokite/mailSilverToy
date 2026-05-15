@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/sqlite.js'
+import { config } from '../config.js'
 import type { ParsedEmailRow } from './emailParser.js'
 
 export type ParseStatus = 'pending' | 'ok' | 'error'
@@ -20,27 +21,51 @@ export type EmailListItem = {
   from_name: string | null
 }
 
-export function listEmails(params: {
+export type ListEmailParams = {
   limit: number
   before?: string | null
-}): EmailListItem[] {
+  /** 仅返回该用户前缀作为收件人的邮件（lowercase） */
+  userPrefix?: string | null
+}
+
+export function listEmails(params: ListEmailParams): EmailListItem[] {
   const limit = Math.min(Math.max(1, params.limit), 100)
   const before = params.before?.trim() || null
-  const sql = before
-    ? `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
-       FROM emails e
-       LEFT JOIN emails_parsed p ON p.email_id = e.id
-       WHERE e.received_at < ?
-       ORDER BY e.received_at DESC
-       LIMIT ?`
-    : `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
-       FROM emails e
-       LEFT JOIN emails_parsed p ON p.email_id = e.id
-       ORDER BY e.received_at DESC
-       LIMIT ?`
-  const stmt = getDb().prepare(sql)
-  const rows = before ? stmt.all(before, limit) : stmt.all(limit)
-  return rows as EmailListItem[]
+  const userPrefix = params.userPrefix?.trim().toLowerCase() || null
+
+  const where: string[] = []
+  const args: unknown[] = []
+  if (userPrefix) {
+    where.push(
+      `EXISTS (SELECT 1 FROM email_recipients r WHERE r.email_id = e.id AND r.prefix = ?)`,
+    )
+    args.push(userPrefix)
+  }
+  if (before) {
+    where.push(`e.received_at < ?`)
+    args.push(before)
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const sql = `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
+                 FROM emails e
+                 LEFT JOIN emails_parsed p ON p.email_id = e.id
+                 ${whereSql}
+                 ORDER BY e.received_at DESC
+                 LIMIT ?`
+  args.push(limit)
+  return getDb().prepare(sql).all(...args) as EmailListItem[]
+}
+
+export function getEmailListItem(id: string): EmailListItem | null {
+  const row = getDb()
+    .prepare(
+      `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name
+         FROM emails e
+         LEFT JOIN emails_parsed p ON p.email_id = e.id
+        WHERE e.id = ?`,
+    )
+    .get(id) as EmailListItem | undefined
+  return row ?? null
 }
 
 export type EmailDetail = {
@@ -114,17 +139,67 @@ export function getRawById(id: string): Buffer | null {
   return row?.raw ?? null
 }
 
+/** 判断邮件是否含有以指定 prefix 作为本域收件人 */
+export function emailHasRecipientPrefix(
+  emailId: string,
+  prefix: string,
+): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS hit FROM email_recipients WHERE email_id = ? AND prefix = ? LIMIT 1`,
+    )
+    .get(emailId, prefix) as { hit: number } | undefined
+  return !!row
+}
+
+/** 从 parsed row 的 to/cc/bcc JSON 列里抽取匹配本服务域名的收件人 */
+export function extractDomainRecipients(
+  parsedRow: ParsedEmailRow | null,
+): Array<{ address: string; prefix: string }> {
+  if (!parsedRow) return []
+  const domain = config.email.domain.toLowerCase()
+  const fields = [parsedRow.to_json, parsedRow.cc_json, parsedRow.bcc_json]
+  const out = new Map<string, { address: string; prefix: string }>()
+  for (const field of fields) {
+    if (!field) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(field)
+    } catch {
+      continue
+    }
+    if (!Array.isArray(parsed)) continue
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue
+      const addr = (item as { address?: unknown }).address
+      if (typeof addr !== 'string') continue
+      const lower = addr.trim().toLowerCase()
+      if (!lower.endsWith(domain)) continue
+      const prefix = lower.slice(0, lower.length - domain.length)
+      if (!prefix) continue
+      if (!out.has(lower)) out.set(lower, { address: lower, prefix })
+    }
+  }
+  return Array.from(out.values())
+}
+
+export type InsertResult = {
+  id: string
+  recipients: Array<{ address: string; prefix: string }>
+}
+
 export function insertEmailTransaction(input: {
   raw: Buffer
   bodySha256: string
   parseStatus: ParseStatus
   parseError: string | null
   parsedRow: ParsedEmailRow | null
-}): { id: string } {
+}): InsertResult {
   const id = randomUUID()
   const receivedAt = new Date().toISOString()
   const size = input.raw.length
   const db = getDb()
+  const recipients = extractDomainRecipients(input.parsedRow)
 
   const insertEmail = db.prepare(
     `INSERT INTO emails (id, received_at, size, body_sha256, raw, parse_status, parse_error)
@@ -135,6 +210,9 @@ export function insertEmailTransaction(input: {
        email_id, message_id, subject, from_addr, from_name, to_json, cc_json, bcc_json,
        reply_to_json, date, text, html, headers_json, attachments_meta_json
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+  const insertRecipient = db.prepare(
+    `INSERT OR IGNORE INTO email_recipients (email_id, address, prefix) VALUES (?, ?, ?)`,
   )
 
   const tx = db.transaction(() => {
@@ -166,8 +244,11 @@ export function insertEmailTransaction(input: {
         r.attachments_meta_json,
       )
     }
+    for (const rec of recipients) {
+      insertRecipient.run(id, rec.address, rec.prefix)
+    }
   })
 
   tx()
-  return { id }
+  return { id, recipients }
 }

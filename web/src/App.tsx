@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { Loader2 } from "lucide-react"
 import { Sidebar, type Folder } from "@/components/dashboard/Sidebar"
 import { MailList } from "@/components/dashboard/MailList"
 import { MailView } from "@/components/dashboard/MailView"
+import { AuthScreen } from "@/components/auth/AuthScreen"
 import {
   getEmail,
   listEmails,
+  openMailStream,
+  type AuthUser,
   type EmailDetail,
   type EmailListItem,
 } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 
 const folderLabels: Record<Folder, string> = {
   inbox: "收件箱",
@@ -17,7 +22,10 @@ const folderLabels: Record<Folder, string> = {
   trash: "回收站",
 }
 
-function App() {
+type LiveStatus = "connecting" | "live" | "offline"
+
+function MailApp({ user }: { user: AuthUser }) {
+  const { logout } = useAuth()
   const [folder, setFolder] = useState<Folder>("inbox")
 
   const [items, setItems] = useState<EmailListItem[]>([])
@@ -29,12 +37,13 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>("connecting")
+
   const detailCache = useRef<Map<string, EmailDetail>>(new Map())
   const detailReqId = useRef(0)
 
   const refreshList = useCallback(async () => {
     if (folder !== "inbox") {
-      // 后端目前只暴露统一的邮件列表（≈ 收件箱），其它文件夹暂无对应数据
       setItems([])
       setListError(null)
       setListLoading(false)
@@ -92,15 +101,35 @@ function App() {
       })
   }, [selectedId])
 
+  useEffect(() => {
+    setLiveStatus("connecting")
+    const es = openMailStream({
+      onReady: () => setLiveStatus("live"),
+      onError: () => setLiveStatus("offline"),
+      onMail: (item) => {
+        setItems((prev) => {
+          if (prev.some((m) => m.id === item.id)) return prev
+          return [item, ...prev]
+        })
+        setSelectedId((prev) => prev ?? item.id)
+      },
+    })
+    return () => es.close()
+  }, [user.id])
+
   return (
     <div className="flex h-svh w-full overflow-hidden bg-background text-foreground">
       <Sidebar
+        user={user}
         active={folder}
+        liveStatus={liveStatus}
+        inboxCount={items.length}
         onChange={(f) => {
           setFolder(f)
           setSelectedId(null)
           setDetail(null)
         }}
+        onLogout={() => void logout()}
       />
       <MailList
         title={folderLabels[folder]}
@@ -114,6 +143,22 @@ function App() {
       <MailView mail={detail} loading={detailLoading} error={detailError} />
     </div>
   )
+}
+
+function App() {
+  const auth = useAuth()
+  if (auth.status === "loading") {
+    return (
+      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        正在恢复会话…
+      </div>
+    )
+  }
+  if (auth.status !== "authenticated") {
+    return <AuthScreen />
+  }
+  return <MailApp user={auth.user} />
 }
 
 export default App

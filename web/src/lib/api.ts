@@ -48,6 +48,12 @@ export type EmailDetail = {
   parsed: EmailParsed | null
 }
 
+export type AuthUser = {
+  id: string
+  prefix: string
+  email: string
+}
+
 class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -56,15 +62,32 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (!headers.has("Accept")) headers.set("Accept", "application/json")
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Accept: "application/json", ...init?.headers },
+    credentials: "include",
     ...init,
+    headers,
   })
   if (!res.ok) {
+    let message = `HTTP ${res.status}`
     const text = await res.text().catch(() => "")
-    throw new ApiError(res.status, text || `HTTP ${res.status}`)
+    if (text) {
+      try {
+        const j = JSON.parse(text) as { error?: string }
+        if (j?.error) message = j.error
+        else message = text
+      } catch {
+        message = text
+      }
+    }
+    throw new ApiError(res.status, message)
   }
+  if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
 
@@ -84,6 +107,50 @@ export function getEmail(id: string) {
 
 export function rawEmailUrl(id: string) {
   return `${API_BASE}/api/email/${encodeURIComponent(id)}/raw`
+}
+
+export function getMe() {
+  return request<{ user: AuthUser | null }>(`/api/auth/me`)
+}
+
+export function login(prefix: string, password: string) {
+  return request<{ ok: true; user: AuthUser }>(`/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ prefix, password }),
+  })
+}
+
+export function register(prefix: string, password: string) {
+  return request<{ ok: true; user: AuthUser }>(`/api/auth/register`, {
+    method: "POST",
+    body: JSON.stringify({ prefix, password }),
+  })
+}
+
+export function logout() {
+  return request<{ ok: true }>(`/api/auth/logout`, { method: "POST" })
+}
+
+/** 创建 EventSource 订阅新邮件，同源走 cookie；返回连接对象供调用方关闭 */
+export function openMailStream(handlers: {
+  onMail: (item: EmailListItem) => void
+  onReady?: () => void
+  onError?: (e: Event) => void
+}): EventSource {
+  const es = new EventSource(`${API_BASE}/api/email/stream`, {
+    withCredentials: true,
+  })
+  es.addEventListener("ready", () => handlers.onReady?.())
+  es.addEventListener("mail", (e) => {
+    try {
+      const data = JSON.parse((e as MessageEvent).data) as EmailListItem
+      handlers.onMail(data)
+    } catch {
+      /* ignore malformed */
+    }
+  })
+  if (handlers.onError) es.onerror = handlers.onError
+  return es
 }
 
 export { ApiError }
