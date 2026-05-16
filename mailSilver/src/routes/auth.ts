@@ -27,6 +27,7 @@ import {
   addressLooksValid,
   listEmailsOfUser,
 } from '../services/userEmailRepo.js'
+import { emitHook } from '../services/hooks/index.js'
 
 const auth = new Hono()
 
@@ -105,6 +106,11 @@ auth.post('/register', async (c) => {
     const user = tx()
     const session = createSession(user.id)
     touchLastLogin(user.id)
+    emitHook('user:registered', {
+      userId: user.id,
+      username: user.username,
+      initialEmail,
+    })
     setSessionCookie(c, session.token, session.expires_at)
     return c.json({
       ok: true,

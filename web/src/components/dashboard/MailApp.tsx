@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Sidebar, type Folder } from "@/components/dashboard/Sidebar"
+import { HooksPage } from "@/components/dashboard/HooksPage"
 import { MailList } from "@/components/dashboard/MailList"
 import { MailView } from "@/components/dashboard/MailView"
 import {
@@ -14,7 +15,7 @@ import {
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 
-const folderLabels: Record<Folder, string> = {
+const folderLabels: Record<Exclude<Folder, "hooks">, string> = {
   inbox: "收件箱",
   starred: "星标",
   sent: "已发送",
@@ -75,7 +76,7 @@ export function MailApp({ user }: { user: AuthUser }) {
   }, [refreshList])
 
   useEffect(() => {
-    if (!selectedId) {
+    if (folder === "hooks" || !selectedId) {
       setDetail(null)
       setDetailError(null)
       return
@@ -105,7 +106,7 @@ export function MailApp({ user }: { user: AuthUser }) {
         if (reqId !== detailReqId.current) return
         setDetailLoading(false)
       })
-  }, [selectedId])
+  }, [folder, selectedId])
 
   useEffect(() => {
     setLocalUser(user)
@@ -168,16 +169,22 @@ export function MailApp({ user }: { user: AuthUser }) {
           })()
         }
       />
-      <MailList
-        title={folderLabels[folder]}
-        mails={items}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        loading={listLoading}
-        error={listError}
-        onRetry={() => void refreshList()}
-      />
-      <MailView mail={detail} loading={detailLoading} error={detailError} />
+      {folder === "hooks" ? (
+        <HooksPage />
+      ) : (
+        <>
+          <MailList
+            title={folderLabels[folder]}
+            mails={items}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            loading={listLoading}
+            error={listError}
+            onRetry={() => void refreshList()}
+          />
+          <MailView mail={detail} loading={detailLoading} error={detailError} />
+        </>
+      )}
     </div>
   )
 }

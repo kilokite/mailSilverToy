@@ -61,6 +61,35 @@ CREATE TABLE IF NOT EXISTS email_recipients (
   PRIMARY KEY (email_id, address)
 );
 CREATE INDEX IF NOT EXISTS idx_recipients_address ON email_recipients(address COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS hook_subscriptions (
+  id            TEXT PRIMARY KEY,
+  owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  event         TEXT NOT NULL,
+  target_url    TEXT NOT NULL,
+  secret        TEXT,
+  active        INTEGER NOT NULL DEFAULT 1,
+  filter_json   TEXT,
+  headers_json  TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hook_sub_event ON hook_subscriptions(event, active);
+CREATE INDEX IF NOT EXISTS idx_hook_sub_owner ON hook_subscriptions(owner_user_id);
+
+CREATE TABLE IF NOT EXISTS hook_deliveries (
+  id               TEXT PRIMARY KEY,
+  subscription_id  TEXT NOT NULL REFERENCES hook_subscriptions(id) ON DELETE CASCADE,
+  event            TEXT NOT NULL,
+  status           TEXT NOT NULL,
+  attempt          INTEGER NOT NULL,
+  http_status      INTEGER,
+  error            TEXT,
+  request_body     TEXT,
+  response_excerpt TEXT,
+  created_at       TEXT NOT NULL,
+  finished_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hook_deliv_sub ON hook_deliveries(subscription_id, created_at DESC);
 `
 
 const dropLegacySql = `

@@ -110,12 +110,12 @@ export function AuthScreen() {
         <div className="flex items-center gap-3">
           <img
             src={logoUrl}
-            alt="mailSilver"
+            alt="irisMail"
             className="h-10 w-10 shrink-0 object-contain"
             style={{ imageRendering: "pixelated" }}
           />
           <div>
-            <h1 className="text-base font-semibold leading-tight">mailSilver</h1>
+            <h1 className="text-base font-semibold leading-tight">irisMail</h1>
           </div>
         </div>
 

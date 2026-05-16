@@ -8,6 +8,7 @@ import {
   listEmailsOfUser,
   splitAddress,
 } from '../services/userEmailRepo.js'
+import { emitHook } from '../services/hooks/index.js'
 
 const me = new Hono()
 
@@ -50,6 +51,11 @@ me.post('/emails', requireUser, (c) => {
         }
         throw e
       }
+      emitHook('user:email_added', {
+        userId: user.id,
+        username: user.username,
+        address,
+      })
       return c.json({ ok: true, emails: listEmailsOfUser(user.id) })
     })
     .catch(() => c.json({ error: 'invalid body' }, 400))

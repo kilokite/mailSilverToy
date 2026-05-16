@@ -14,6 +14,7 @@ import {
   MailPlus,
   Trash2Icon,
   Settings2,
+  Webhook,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
@@ -35,7 +36,7 @@ import { addMyEmail, deleteMyEmail } from "@/lib/api"
 import type { MailboxFilter } from "@/lib/api"
 import logoUrl from "@/assets/logo.png"
 
-export type Folder = "inbox" | "sent" | "drafts" | "starred" | "trash"
+export type Folder = "inbox" | "sent" | "drafts" | "starred" | "trash" | "hooks"
 
 const folders: { key: Folder; label: string; icon: React.ElementType }[] = [
   { key: "inbox", label: "收件箱", icon: Inbox },
@@ -49,7 +50,7 @@ type LiveStatus = "connecting" | "live" | "offline"
 
 const liveLabels: Record<LiveStatus, string> = {
   connecting: "连接中…",
-  live: "实时",
+  live: "Live",
   offline: "离线",
 }
 
@@ -235,23 +236,36 @@ export function Sidebar({
               </button>
             )
           })}
-          {adminAccess ? (
-            <div className="px-1 pt-3">
-              <p className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                管理
-              </p>
+          <div className="px-1 pt-3">
+            <p className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              工具
+            </p>
+            <button
+              type="button"
+              onClick={() => onChange("hooks")}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                active === "hooks"
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              )}
+            >
+              <Webhook className="h-4 w-4" />
+              <span className="flex-1 text-left">Webhook</span>
+            </button>
+            {adminAccess ? (
               <Link
                 to="/admin"
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  "mt-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                   "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                 )}
               >
                 <LayoutDashboard className="h-4 w-4" />
                 <span>后台管理</span>
               </Link>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </nav>
 
         <Separator />
@@ -350,11 +364,11 @@ function SidebarHeader({ liveStatus }: { liveStatus: LiveStatus }) {
       <div className="flex h-14 items-center gap-2 px-4">
         <img
           src={logoUrl}
-          alt="mailSilver"
+          alt="irisMail"
           className="h-8 w-8 shrink-0 object-contain"
           style={{ imageRendering: "pixelated" }}
         />
-        <span className="text-sm font-semibold">mailSilver</span>
+        <span className="text-sm font-semibold">irisMail</span>
         <span
           className={cn(
             "ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",

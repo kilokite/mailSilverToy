@@ -4,9 +4,11 @@ import { runMigrations } from './db/migrations.js'
 import api from './routes/index.js'
 import webhook from './routes/webhook.js'
 import staticApp from './middleware/static.js'
+import { registerHookDispatcher } from './services/hooks/index.js'
 
 export function createApp() {
   runMigrations()
+  registerHookDispatcher()
 
   const app = new Hono()
 

@@ -214,6 +214,156 @@ export function logout() {
   return request<{ ok: true }>(`/api/auth/logout`, { method: "POST" })
 }
 
+export type HookEventMeta = {
+  name: string
+  description: string
+  scope: "user" | "global"
+}
+
+export type HookSubscription = {
+  id: string
+  owner_user_id: string | null
+  event: string
+  target_url: string
+  secret: string | null
+  active: boolean
+  filter_json: string | null
+  headers_json: string | null
+  created_at: string
+}
+
+export type HookDelivery = {
+  id: string
+  subscription_id: string
+  event: string
+  status: "pending" | "success" | "failed"
+  attempt: number
+  http_status: number | null
+  error: string | null
+  request_body: string | null
+  response_excerpt: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export function listHookEvents() {
+  return request<{ events: HookEventMeta[] }>(`/api/hooks/events`)
+}
+
+export function listHookSubscriptions() {
+  return request<{ items: HookSubscription[] }>(`/api/hooks/subscriptions`)
+}
+
+export function createHookSubscription(input: {
+  event: string
+  target_url: string
+  secret?: string | null
+  headers?: Record<string, string> | null
+}) {
+  return request<{ ok: true; item: HookSubscription }>(`/api/hooks/subscriptions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateHookSubscription(
+  id: string,
+  patch: {
+    target_url?: string
+    secret?: string | null
+    active?: boolean
+    headers?: Record<string, string> | null
+  },
+) {
+  return request<{ ok: true; item: HookSubscription }>(
+    `/api/hooks/subscriptions/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    },
+  )
+}
+
+export function deleteHookSubscription(id: string) {
+  return request<{ ok: true }>(
+    `/api/hooks/subscriptions/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  )
+}
+
+export function listHookDeliveries(subscriptionId: string, limit = 50) {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return request<{ items: HookDelivery[] }>(
+    `/api/hooks/subscriptions/${encodeURIComponent(subscriptionId)}/deliveries?${q}`,
+  )
+}
+
+export function testHookSubscription(id: string) {
+  return request<{ ok: true; queued: boolean; event: string }>(
+    `/api/hooks/subscriptions/${encodeURIComponent(id)}/test`,
+    { method: "POST" },
+  )
+}
+
+export function listAdminHookEvents() {
+  return request<{ events: HookEventMeta[] }>(`/api/admin/hooks/events`)
+}
+
+export function listAdminHookSubscriptions() {
+  return request<{ items: HookSubscription[] }>(`/api/admin/hooks/subscriptions`)
+}
+
+export function createAdminHookSubscription(input: {
+  event: string
+  target_url: string
+  secret?: string | null
+  headers?: Record<string, string> | null
+}) {
+  return request<{ ok: true; item: HookSubscription }>(`/api/admin/hooks/subscriptions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAdminHookSubscription(
+  id: string,
+  patch: {
+    target_url?: string
+    secret?: string | null
+    active?: boolean
+    headers?: Record<string, string> | null
+  },
+) {
+  return request<{ ok: true; item: HookSubscription }>(
+    `/api/admin/hooks/subscriptions/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    },
+  )
+}
+
+export function deleteAdminHookSubscription(id: string) {
+  return request<{ ok: true }>(
+    `/api/admin/hooks/subscriptions/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  )
+}
+
+export function listAdminHookDeliveries(subscriptionId: string, limit = 50) {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return request<{ items: HookDelivery[] }>(
+    `/api/admin/hooks/subscriptions/${encodeURIComponent(subscriptionId)}/deliveries?${q}`,
+  )
+}
+
+export function testAdminHookSubscription(id: string) {
+  return request<{ ok: true; queued: boolean; event: string }>(
+    `/api/admin/hooks/subscriptions/${encodeURIComponent(id)}/test`,
+    { method: "POST" },
+  )
+}
+
 /** 创建 EventSource 订阅新邮件，同源走 cookie；返回连接对象供调用方关闭 */
 export function openMailStream(handlers: {
   onMail: (item: EmailListItem, addresses: string[]) => void

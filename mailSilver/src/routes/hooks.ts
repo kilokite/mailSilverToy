@@ -1,19 +1,17 @@
 import { Hono } from 'hono'
 import { requireUser } from '../middleware/auth.js'
-import { requireAdmin } from '../middleware/admin.js'
-import { listUsersWithEmailCounts } from '../services/userRepo.js'
-import { listAllUserEmails } from '../services/userEmailRepo.js'
-import { buildTestPayload, emitHook, HOOK_EVENTS, isHookEventName } from '../services/hooks/index.js'
+import { buildTestPayload, HOOK_EVENTS, isHookEventName } from '../services/hooks/index.js'
+import { emitHook } from '../services/hooks/index.js'
 import { listDeliveriesBySubscription } from '../services/hooks/deliveryRepo.js'
 import {
   createSubscription,
-  deleteSystemSubscription,
-  getSystemSubscription,
-  listSystemSubscriptions,
-  updateSystemSubscription,
+  deleteSubscriptionOwnedBy,
+  getSubscriptionOwnedBy,
+  listSubscriptionsByOwner,
+  updateSubscriptionOwnedBy,
 } from '../services/hooks/subscriptionRepo.js'
 
-const admin = new Hono()
+const hooks = new Hono()
 
 type CreateBody = {
   event?: unknown
@@ -59,36 +57,18 @@ function parseUrl(input: unknown): string | null {
   }
 }
 
-admin.get('/users', requireUser, requireAdmin, (c) => {
-  const rows = listUsersWithEmailCounts()
-  const emailsByUser = new Map<string, string[]>()
-  for (const row of listAllUserEmails()) {
-    const list = emailsByUser.get(row.user_id)
-    if (list) list.push(row.address)
-    else emailsByUser.set(row.user_id, [row.address])
-  }
-  return c.json({
-    users: rows.map((u) => ({
-      id: u.id,
-      username: u.username,
-      emails: emailsByUser.get(u.id) ?? [],
-      created_at: u.created_at,
-      last_login_at: u.last_login_at,
-      owned_email_count: u.owned_email_count,
-      email_count: u.email_count,
-    })),
-  })
+hooks.get('/events', requireUser, (c) => {
+  return c.json({ events: HOOK_EVENTS.filter((e) => e.scope === 'user') })
 })
 
-admin.get('/hooks/events', requireUser, requireAdmin, (c) => {
-  return c.json({ events: HOOK_EVENTS.filter((e) => e.scope === 'global') })
+hooks.get('/subscriptions', requireUser, (c) => {
+  const user = c.get('user')
+  const items = listSubscriptionsByOwner(user.id)
+  return c.json({ items })
 })
 
-admin.get('/hooks/subscriptions', requireUser, requireAdmin, (c) => {
-  return c.json({ items: listSystemSubscriptions() })
-})
-
-admin.post('/hooks/subscriptions', requireUser, requireAdmin, async (c) => {
+hooks.post('/subscriptions', requireUser, async (c) => {
+  const user = c.get('user')
   const body = (await c.req.json().catch(() => null)) as CreateBody | null
   if (!body) return c.json({ error: 'invalid body' }, 400)
 
@@ -97,7 +77,7 @@ admin.post('/hooks/subscriptions', requireUser, requireAdmin, async (c) => {
     return c.json({ error: 'invalid event' }, 400)
   }
   const meta = HOOK_EVENTS.find((x) => x.name === event)
-  if (!meta || meta.scope !== 'global') {
+  if (!meta || meta.scope !== 'user') {
     return c.json({ error: 'forbidden event' }, 403)
   }
   const targetUrl = parseUrl(body.target_url)
@@ -114,7 +94,7 @@ admin.post('/hooks/subscriptions', requireUser, requireAdmin, async (c) => {
   const headersJson = parseHeadersJson(body.headers)
 
   const created = createSubscription({
-    ownerUserId: null,
+    ownerUserId: user.id,
     event,
     targetUrl,
     secret,
@@ -124,7 +104,8 @@ admin.post('/hooks/subscriptions', requireUser, requireAdmin, async (c) => {
   return c.json({ ok: true, item: created }, 201)
 })
 
-admin.patch('/hooks/subscriptions/:id', requireUser, requireAdmin, async (c) => {
+hooks.patch('/subscriptions/:id', requireUser, async (c) => {
+  const user = c.get('user')
   const id = c.req.param('id')
   const body = (await c.req.json().catch(() => null)) as PatchBody | null
   if (!body) return c.json({ error: 'invalid body' }, 400)
@@ -158,35 +139,38 @@ admin.patch('/hooks/subscriptions/:id', requireUser, requireAdmin, async (c) => 
     patch.headersJson = headersJson
   }
 
-  const updated = updateSystemSubscription(id, patch)
+  const updated = updateSubscriptionOwnedBy(id, user.id, patch)
   if (!updated) return c.json({ error: 'Not Found' }, 404)
   return c.json({ ok: true, item: updated })
 })
 
-admin.delete('/hooks/subscriptions/:id', requireUser, requireAdmin, (c) => {
+hooks.delete('/subscriptions/:id', requireUser, (c) => {
+  const user = c.get('user')
   const id = c.req.param('id')
-  const ok = deleteSystemSubscription(id)
+  const ok = deleteSubscriptionOwnedBy(id, user.id)
   if (!ok) return c.json({ error: 'Not Found' }, 404)
   return c.json({ ok: true })
 })
 
-admin.get('/hooks/subscriptions/:id/deliveries', requireUser, requireAdmin, (c) => {
+hooks.get('/subscriptions/:id/deliveries', requireUser, (c) => {
+  const user = c.get('user')
   const id = c.req.param('id')
-  const sub = getSystemSubscription(id)
+  const sub = getSubscriptionOwnedBy(id, user.id)
   if (!sub) return c.json({ error: 'Not Found' }, 404)
   const limit = Number(c.req.query('limit') ?? 50)
   const items = listDeliveriesBySubscription(sub.id, Number.isFinite(limit) ? limit : 50)
   return c.json({ items })
 })
 
-admin.post('/hooks/subscriptions/:id/test', requireUser, requireAdmin, (c) => {
+hooks.post('/subscriptions/:id/test', requireUser, (c) => {
+  const user = c.get('user')
   const id = c.req.param('id')
-  const sub = getSystemSubscription(id)
+  const sub = getSubscriptionOwnedBy(id, user.id)
   if (!sub) return c.json({ error: 'Not Found' }, 404)
-  const actor = c.get('user')
-  const payload = buildTestPayload(sub.event, actor)
+
+  const payload = buildTestPayload(sub.event, user)
   emitHook(sub.event, payload)
   return c.json({ ok: true, queued: true, event: sub.event })
 })
 
-export default admin
+export default hooks

@@ -5,6 +5,7 @@ import email from './email.js'
 import auth from './auth.js'
 import admin from './admin.js'
 import me from './me.js'
+import hooks from './hooks.js'
 
 const api = new Hono()
 
@@ -14,5 +15,6 @@ api.route('/email', email)
 api.route('/auth', auth)
 api.route('/me', me)
 api.route('/admin', admin)
+api.route('/hooks', hooks)
 
 export default api
