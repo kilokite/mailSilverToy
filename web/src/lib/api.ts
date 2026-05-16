@@ -51,21 +51,23 @@ export type EmailDetail = {
 
 export type AuthUser = {
   id: string
-  prefix: string
-  email: string
+  username: string
+  emails: string[]
 }
 
 export type MeResponse = {
   user: AuthUser | null
   admin_access: boolean
+  domains: string[]
 }
 
 export type AdminUserRow = {
   id: string
-  prefix: string
-  email: string
+  username: string
+  emails: string[]
   created_at: string
   last_login_at: string | null
+  owned_email_count: number
   email_count: number
 }
 
@@ -132,10 +134,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T
 }
 
-export function listEmails(params: { limit?: number; before?: string } = {}) {
+/** 收件箱筛选：`all` 为全部邮箱聚合，否则为单个完整地址 */
+export type MailboxFilter = "all" | (string & {})
+
+export function listEmails(
+  params: { limit?: number; before?: string; address?: MailboxFilter } = {},
+) {
   const q = new URLSearchParams()
   if (params.limit) q.set("limit", String(params.limit))
   if (params.before) q.set("before", params.before)
+  if (params.address && params.address !== "all") {
+    q.set("address", params.address)
+  }
   const qs = q.toString()
   return request<{ items: EmailListItem[] }>(
     `/api/email${qs ? `?${qs}` : ""}`,
@@ -154,22 +164,26 @@ export function getMe() {
   return request<MeResponse>(`/api/auth/me`)
 }
 
-export function login(prefix: string, password: string) {
+export function login(username: string, password: string) {
   return request<{ ok: true; user: AuthUser; admin_access: boolean }>(
     `/api/auth/login`,
     {
       method: "POST",
-      body: JSON.stringify({ prefix, password }),
+      body: JSON.stringify({ username, password }),
     },
   )
 }
 
-export function register(prefix: string, password: string) {
+export function register(input: {
+  username: string
+  password: string
+  initialEmail: string
+}) {
   return request<{ ok: true; user: AuthUser; admin_access: boolean }>(
     `/api/auth/register`,
     {
       method: "POST",
-      body: JSON.stringify({ prefix, password }),
+      body: JSON.stringify(input),
     },
   )
 }
@@ -178,13 +192,31 @@ export function listAdminUsers() {
   return request<{ users: AdminUserRow[] }>(`/api/admin/users`)
 }
 
+export function getMyEmails() {
+  return request<{ emails: string[] }>(`/api/me/emails`)
+}
+
+export function addMyEmail(payload: { address?: string; prefix?: string; domain?: string }) {
+  return request<{ ok: true; emails: string[] }>(`/api/me/emails`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteMyEmail(address: string) {
+  return request<{ ok: true; emails: string[] }>(
+    `/api/me/emails/${encodeURIComponent(address)}`,
+    { method: "DELETE" },
+  )
+}
+
 export function logout() {
   return request<{ ok: true }>(`/api/auth/logout`, { method: "POST" })
 }
 
 /** 创建 EventSource 订阅新邮件，同源走 cookie；返回连接对象供调用方关闭 */
 export function openMailStream(handlers: {
-  onMail: (item: EmailListItem) => void
+  onMail: (item: EmailListItem, addresses: string[]) => void
   onReady?: () => void
   onError?: (e: Event) => void
 }): EventSource {
@@ -194,8 +226,14 @@ export function openMailStream(handlers: {
   es.addEventListener("ready", () => handlers.onReady?.())
   es.addEventListener("mail", (e) => {
     try {
-      const data = JSON.parse((e as MessageEvent).data) as EmailListItem
-      handlers.onMail(data)
+      const raw = JSON.parse((e as MessageEvent).data) as
+        | EmailListItem
+        | { item: EmailListItem; addresses?: string[] }
+      if (raw && typeof raw === "object" && "item" in raw) {
+        handlers.onMail(raw.item, raw.addresses ?? [])
+        return
+      }
+      handlers.onMail(raw as EmailListItem, [])
     } catch {
       /* ignore malformed */
     }

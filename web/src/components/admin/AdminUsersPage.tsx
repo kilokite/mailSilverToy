@@ -82,25 +82,32 @@ export function AdminUsersPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2.5">前缀</th>
+                  <th className="px-3 py-2.5">用户名</th>
                   <th className="px-3 py-2.5">邮箱</th>
                   <th className="px-3 py-2.5">注册时间</th>
                   <th className="px-3 py-2.5">最后登录</th>
+                  <th className="px-3 py-2.5 text-right">拥有邮箱数</th>
                   <th className="px-3 py-2.5 text-right">邮件数</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {rows.map((u) => (
                   <tr key={u.id} className="hover:bg-muted/30">
-                    <td className="px-3 py-2 font-mono text-xs">{u.prefix}</td>
-                    <td className="max-w-[200px] truncate px-3 py-2 font-mono text-xs">
-                      {u.email}
+                    <td className="px-3 py-2 font-mono text-xs">{u.username}</td>
+                    <td
+                      className="max-w-[260px] truncate px-3 py-2 font-mono text-xs"
+                      title={u.emails.join(", ")}
+                    >
+                      {u.emails.join(", ")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                       {formatIso(u.created_at)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                       {formatIso(u.last_login_at)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">
+                      {u.owned_email_count}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium">
                       {u.email_count}

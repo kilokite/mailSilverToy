@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events'
 import type { EmailListItem } from './emailRepo.js'
 
 export type EmailNewEvent = {
-  /** 命中的收件人前缀（lowercase，仅匹配本服务域名） */
-  prefixes: string[]
+  /** 命中的收件人完整地址（lowercase） */
+  addresses: string[]
   item: EmailListItem
 }
 

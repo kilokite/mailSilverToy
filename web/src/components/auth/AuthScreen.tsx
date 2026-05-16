@@ -6,16 +6,23 @@ import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import logoUrl from "@/assets/logo.png"
 
-const MAIL_DOMAIN = "@kt.sb"
-
 type Mode = "login" | "register"
 
-const PREFIX_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/
+const USERNAME_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/
+const LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/
 
-function validatePrefix(prefix: string): string | null {
-  if (!prefix) return "请输入邮箱前缀"
-  if (!PREFIX_RE.test(prefix)) {
-    return "前缀仅支持小写字母 / 数字 / . _ -，长度 1-32，首尾必须是字母数字"
+function validateUsername(username: string): string | null {
+  if (!username) return "请输入用户名"
+  if (!USERNAME_RE.test(username)) {
+    return "用户名仅支持小写字母 / 数字 / . _ -，长度 1-32，首尾必须是字母数字"
+  }
+  return null
+}
+
+function validateLocal(local: string): string | null {
+  if (!local) return "请输入邮箱前缀"
+  if (!LOCAL_RE.test(local)) {
+    return "邮箱前缀仅支持小写字母 / 数字 / . _ -，长度 1-32，首尾必须是字母数字"
   }
   return null
 }
@@ -31,18 +38,28 @@ function validatePassword(password: string, mode: Mode): string | null {
 }
 
 export function AuthScreen() {
-  const { login, register } = useAuth()
+  const { login, register, domains } = useAuth()
   const [mode, setMode] = useState<Mode>("login")
-  const [prefix, setPrefix] = useState("")
+  const [username, setUsername] = useState("")
+  const [initialLocal, setInitialLocal] = useState("")
+  const [selectedDomain, setSelectedDomain] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const normalized = prefix.trim().toLowerCase()
+  const normalizedUsername = username.trim().toLowerCase()
+  const normalizedLocal = initialLocal.trim().toLowerCase()
+  const domainOptions = domains.length > 0 ? domains : ["@kt.sb"]
+  const activeDomain = selectedDomain || domainOptions[0]
   const preview = useMemo(
-    () => (normalized ? `${normalized}${MAIL_DOMAIN}` : `yourname${MAIL_DOMAIN}`),
-    [normalized],
+    () =>
+      mode === "register"
+        ? normalizedLocal
+          ? `${normalizedLocal}${activeDomain}`
+          : `yourname${activeDomain}`
+        : "",
+    [mode, normalizedLocal, activeDomain],
   )
 
   function switchMode(next: Mode) {
@@ -56,8 +73,13 @@ export function AuthScreen() {
     e.preventDefault()
     setError(null)
 
-    const prefixError = validatePrefix(normalized)
-    if (prefixError) return setError(prefixError)
+    const usernameError = validateUsername(normalizedUsername)
+    if (usernameError) return setError(usernameError)
+    if (mode === "register") {
+      const localError = validateLocal(normalizedLocal)
+      if (localError) return setError(localError)
+      if (!activeDomain) return setError("暂无可用后缀，请联系管理员")
+    }
     const pwError = validatePassword(password, mode)
     if (pwError) return setError(pwError)
     if (mode === "register" && password !== confirm) {
@@ -66,8 +88,15 @@ export function AuthScreen() {
 
     setSubmitting(true)
     try {
-      if (mode === "register") await register(normalized, password)
-      else await login(normalized, password)
+      if (mode === "register") {
+        await register({
+          username: normalizedUsername,
+          password,
+          initialEmail: `${normalizedLocal}${activeDomain}`,
+        })
+      } else {
+        await login(normalizedUsername, password)
+      }
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : String(e2))
     } finally {
@@ -87,9 +116,6 @@ export function AuthScreen() {
           />
           <div>
             <h1 className="text-base font-semibold leading-tight">mailSilver</h1>
-            {/* <p className="text-xs text-muted-foreground">
-              专属临时邮箱 · 后缀固定为 <span className="font-mono">{MAIL_DOMAIN}</span>
-            </p> */}
           </div>
         </div>
 
@@ -113,28 +139,53 @@ export function AuthScreen() {
 
         <form onSubmit={onSubmit} className="mt-5 space-y-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground" htmlFor="prefix">
-              邮箱前缀
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="username">
+              用户名
             </label>
-            <div className="mt-1 flex items-stretch overflow-hidden rounded-md border focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-              <Input
-                id="prefix"
-                autoComplete="username"
-                spellCheck={false}
-                placeholder="yourname"
-                value={prefix}
-                onChange={(e) => setPrefix(e.target.value)}
-                className="rounded-none border-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
-              />
-              <span className="flex items-center bg-muted px-3 font-mono text-sm text-muted-foreground">
-                {MAIL_DOMAIN}
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              你的邮箱地址：
-              <span className="ml-1 font-mono text-foreground">{preview}</span>
-            </p>
+            <Input
+              id="username"
+              autoComplete="username"
+              spellCheck={false}
+              placeholder="yourname"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1"
+            />
           </div>
+
+          {mode === "register" ? (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="initial-local">
+                初始邮箱
+              </label>
+              <div className="mt-1 flex items-stretch overflow-hidden rounded-md border focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+                <Input
+                  id="initial-local"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="yourname"
+                  value={initialLocal}
+                  onChange={(e) => setInitialLocal(e.target.value)}
+                  className="rounded-none border-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
+                />
+                <select
+                  value={activeDomain}
+                  onChange={(e) => setSelectedDomain(e.target.value)}
+                  className="bg-muted px-2 text-sm text-muted-foreground outline-none"
+                >
+                  {domainOptions.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                你的邮箱地址：
+                <span className="ml-1 font-mono text-foreground">{preview}</span>
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <label className="text-xs font-medium text-muted-foreground" htmlFor="password">

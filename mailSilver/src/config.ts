@@ -9,8 +9,10 @@ export interface AppConfig {
     secret: string
     dbPath: string
     maxRawBytes: number
-    /** 用户邮箱固定后缀，例如 `@kt.sb` */
-    domain: string
+    /** 支持的邮箱后缀列表（均为小写，形如 `@kt.sb`） */
+    domains: string[]
+    /** 默认邮箱后缀（domains[0]） */
+    defaultDomain: string
   }
   auth: {
     /** 会话有效期（毫秒），默认 30 天 */
@@ -19,11 +21,8 @@ export interface AppConfig {
     cookieSecure: boolean
     /** Cookie 名 */
     cookieName: string
-    /**
-     * 与该前缀（忽略大小写）一致的用户可访问 /api/admin/*。
-     * 未设置或为空则管理接口不可用。
-     */
-    adminPrefix: string | null
+    /** 与该用户名（忽略大小写）一致的用户可访问 /api/admin/* */
+    adminUsername: string | null
   }
 }
 
@@ -41,6 +40,16 @@ function parseBool(v: string | undefined, fallback: boolean): boolean {
   return fallback
 }
 
+function parseMailDomains(v: string | undefined): string[] {
+  const parsed = (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => x.startsWith('@') && x.length > 1)
+  return parsed.length > 0 ? Array.from(new Set(parsed)) : ['@kt.sb']
+}
+
+const mailDomains = parseMailDomains(process.env.MAIL_DOMAINS)
+
 export const config: AppConfig = {
   port: Number(process.env.PORT ?? 23879),
   publicDir,
@@ -49,14 +58,15 @@ export const config: AppConfig = {
     secret: process.env.EMAIL_SECRET ?? '',
     dbPath: process.env.DB_PATH ?? './data/mail.db',
     maxRawBytes: Number(process.env.MAX_RAW_BYTES ?? defaultMaxRaw),
-    domain: (process.env.MAIL_DOMAIN ?? '@kt.sb').toLowerCase(),
+    domains: mailDomains,
+    defaultDomain: mailDomains[0],
   },
   auth: {
     sessionTtlMs: Number(process.env.SESSION_TTL_MS ?? defaultSessionTtl),
     cookieSecure: parseBool(process.env.COOKIE_SECURE, process.env.NODE_ENV === 'production'),
     cookieName: process.env.COOKIE_NAME ?? 'mail_session',
-    adminPrefix: (() => {
-      const raw = process.env.ADMIN_PREFIX?.trim().toLowerCase()
+    adminUsername: (() => {
+      const raw = process.env.ADMIN_USERNAME?.trim().toLowerCase()
       return raw ? raw : null
     })(),
   },

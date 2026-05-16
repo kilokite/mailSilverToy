@@ -10,6 +10,7 @@ import {
   type AuthUser,
   type EmailDetail,
   type EmailListItem,
+  type MailboxFilter,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 
@@ -24,9 +25,11 @@ const folderLabels: Record<Folder, string> = {
 type LiveStatus = "connecting" | "live" | "offline"
 
 export function MailApp({ user }: { user: AuthUser }) {
-  const { logout } = useAuth()
+  const { logout, refresh } = useAuth()
   const navigate = useNavigate()
+  const [localUser, setLocalUser] = useState<AuthUser>(user)
   const [folder, setFolder] = useState<Folder>("inbox")
+  const [mailboxFilter, setMailboxFilter] = useState<MailboxFilter>("all")
 
   const [items, setItems] = useState<EmailListItem[]>([])
   const [listLoading, setListLoading] = useState(false)
@@ -54,7 +57,10 @@ export function MailApp({ user }: { user: AuthUser }) {
     setListLoading(true)
     setListError(null)
     try {
-      const { items: rows } = await listEmails({ limit: 50 })
+      const { items: rows } = await listEmails({
+        limit: 50,
+        address: mailboxFilter,
+      })
       setItems(rows)
       setSelectedId((prev) => prev ?? rows[0]?.id ?? null)
     } catch (e) {
@@ -62,7 +68,7 @@ export function MailApp({ user }: { user: AuthUser }) {
     } finally {
       setListLoading(false)
     }
-  }, [folder])
+  }, [folder, mailboxFilter])
 
   useEffect(() => {
     void refreshList()
@@ -102,11 +108,21 @@ export function MailApp({ user }: { user: AuthUser }) {
   }, [selectedId])
 
   useEffect(() => {
+    setLocalUser(user)
+  }, [user])
+
+  useEffect(() => {
     setLiveStatus("connecting")
     const es = openMailStream({
       onReady: () => setLiveStatus("live"),
       onError: () => setLiveStatus("offline"),
-      onMail: (item) => {
+      onMail: (item, addresses) => {
+        if (
+          mailboxFilter !== "all" &&
+          !addresses.map((a) => a.toLowerCase()).includes(mailboxFilter.toLowerCase())
+        ) {
+          return
+        }
         setItems((prev) => {
           if (prev.some((m) => m.id === item.id)) return prev
           return [item, ...prev]
@@ -115,15 +131,31 @@ export function MailApp({ user }: { user: AuthUser }) {
       },
     })
     return () => es.close()
-  }, [user.id])
+  }, [localUser.id, mailboxFilter])
 
   return (
     <div className="flex h-svh w-full overflow-hidden bg-background text-foreground">
       <Sidebar
-        user={user}
+        user={localUser}
         active={folder}
         liveStatus={liveStatus}
         inboxCount={items.length}
+        mailboxFilter={mailboxFilter}
+        onMailboxFilterChange={(v) => {
+          setMailboxFilter(v)
+          setSelectedId(null)
+          setDetail(null)
+        }}
+        onUserUpdated={(emails) => {
+          setLocalUser((prev) => ({ ...prev, emails }))
+          if (
+            mailboxFilter !== "all" &&
+            !emails.map((e) => e.toLowerCase()).includes(mailboxFilter.toLowerCase())
+          ) {
+            setMailboxFilter("all")
+          }
+          void refresh()
+        }}
         onChange={(f) => {
           setFolder(f)
           setSelectedId(null)

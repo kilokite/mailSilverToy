@@ -25,22 +25,32 @@ export type EmailListItem = {
 export type ListEmailParams = {
   limit: number
   before?: string | null
-  /** 仅返回该用户前缀作为收件人的邮件（lowercase） */
-  userPrefix?: string | null
+  /** 仅返回该用户拥有地址作为收件人的邮件 */
+  userId?: string | null
+  /** 仅返回发往该完整地址的邮件（须属于该用户） */
+  recipientAddress?: string | null
 }
 
 export function listEmails(params: ListEmailParams): EmailListItem[] {
   const limit = Math.min(Math.max(1, params.limit), 100)
   const before = params.before?.trim() || null
-  const userPrefix = params.userPrefix?.trim().toLowerCase() || null
+  const userId = params.userId?.trim() || null
+  const recipientAddress = params.recipientAddress?.trim().toLowerCase() || null
 
   const where: string[] = []
   const args: unknown[] = []
-  if (userPrefix) {
+  if (userId) {
     where.push(
-      `EXISTS (SELECT 1 FROM email_recipients r WHERE r.email_id = e.id AND r.prefix = ?)`,
+      `EXISTS (
+        SELECT 1
+          FROM email_recipients r
+          JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
+         WHERE r.email_id = e.id AND ue.user_id = ?
+         ${recipientAddress ? 'AND r.address = ? COLLATE NOCASE' : ''}
+      )`,
     )
-    args.push(userPrefix)
+    args.push(userId)
+    if (recipientAddress) args.push(recipientAddress)
   }
   if (before) {
     where.push(`e.received_at < ?`)
@@ -140,27 +150,31 @@ export function getRawById(id: string): Buffer | null {
   return row?.raw ?? null
 }
 
-/** 判断邮件是否含有以指定 prefix 作为本域收件人 */
-export function emailHasRecipientPrefix(
+/** 判断邮件是否属于指定用户（按完整地址匹配） */
+export function emailBelongsToUser(
   emailId: string,
-  prefix: string,
+  userId: string,
 ): boolean {
   const row = getDb()
     .prepare(
-      `SELECT 1 AS hit FROM email_recipients WHERE email_id = ? AND prefix = ? LIMIT 1`,
+      `SELECT 1 AS hit
+         FROM email_recipients r
+         JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
+        WHERE r.email_id = ? AND ue.user_id = ?
+        LIMIT 1`,
     )
-    .get(emailId, prefix) as { hit: number } | undefined
+    .get(emailId, userId) as { hit: number } | undefined
   return !!row
 }
 
 /** 从 parsed row 的 to/cc/bcc JSON 列里抽取匹配本服务域名的收件人 */
 export function extractDomainRecipients(
   parsedRow: ParsedEmailRow | null,
-): Array<{ address: string; prefix: string }> {
+): Array<{ address: string }> {
   if (!parsedRow) return []
-  const domain = config.email.domain.toLowerCase()
+  const domains = config.email.domains
   const fields = [parsedRow.to_json, parsedRow.cc_json, parsedRow.bcc_json]
-  const out = new Map<string, { address: string; prefix: string }>()
+  const out = new Map<string, { address: string }>()
   for (const field of fields) {
     if (!field) continue
     let parsed: unknown
@@ -175,10 +189,8 @@ export function extractDomainRecipients(
       const addr = (item as { address?: unknown }).address
       if (typeof addr !== 'string') continue
       const lower = addr.trim().toLowerCase()
-      if (!lower.endsWith(domain)) continue
-      const prefix = lower.slice(0, lower.length - domain.length)
-      if (!prefix) continue
-      if (!out.has(lower)) out.set(lower, { address: lower, prefix })
+      if (!domains.some((d) => lower.endsWith(d))) continue
+      if (!out.has(lower)) out.set(lower, { address: lower })
     }
   }
   return Array.from(out.values())
@@ -186,7 +198,7 @@ export function extractDomainRecipients(
 
 export type InsertResult = {
   id: string
-  recipients: Array<{ address: string; prefix: string }>
+  recipients: Array<{ address: string }>
 }
 
 export function insertEmailTransaction(input: {
@@ -213,7 +225,7 @@ export function insertEmailTransaction(input: {
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const insertRecipient = db.prepare(
-    `INSERT OR IGNORE INTO email_recipients (email_id, address, prefix) VALUES (?, ?, ?)`,
+    `INSERT OR IGNORE INTO email_recipients (email_id, address) VALUES (?, ?)`,
   )
 
   const tx = db.transaction(() => {
@@ -246,7 +258,7 @@ export function insertEmailTransaction(input: {
       )
     }
     for (const rec of recipients) {
-      insertRecipient.run(id, rec.address, rec.prefix)
+      insertRecipient.run(id, rec.address)
     }
   })
 

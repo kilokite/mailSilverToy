@@ -42,7 +42,7 @@ export function getUserFromSession(token: string): UserRow | null {
   const row = db
     .prepare(
       `SELECT s.token AS token, s.expires_at AS expires_at,
-              u.id AS id, u.prefix AS prefix,
+              u.id AS id, u.username AS username,
               u.password_hash AS password_hash, u.password_salt AS password_salt,
               u.created_at AS created_at, u.last_login_at AS last_login_at
          FROM sessions s
@@ -59,7 +59,7 @@ export function getUserFromSession(token: string): UserRow | null {
   }
   return {
     id: row.id,
-    prefix: row.prefix,
+    username: row.username,
     password_hash: row.password_hash,
     password_salt: row.password_salt,
     created_at: row.created_at,

@@ -22,8 +22,13 @@ type AuthState =
   | { status: "authenticated"; user: AuthUser; adminAccess: boolean }
 
 export type AuthContextValue = AuthState & {
-  login: (prefix: string, password: string) => Promise<void>
-  register: (prefix: string, password: string) => Promise<void>
+  domains: string[]
+  login: (username: string, password: string) => Promise<void>
+  register: (input: {
+    username: string
+    password: string
+    initialEmail: string
+  }) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -36,16 +41,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: null,
     adminAccess: false,
   })
+  const [domains, setDomains] = useState<string[]>([])
 
   const refresh = useCallback(async () => {
     try {
-      const { user, admin_access } = await getMe()
+      const { user, admin_access, domains: configuredDomains } = await getMe()
+      setDomains(configuredDomains)
       setState(
         user
           ? { status: "authenticated", user, adminAccess: admin_access }
           : { status: "anonymous", user: null, adminAccess: false },
       )
     } catch {
+      setDomains([])
       setState({ status: "anonymous", user: null, adminAccess: false })
     }
   }, [])
@@ -67,15 +75,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null)
   }, [])
 
-  const login = useCallback(async (prefix: string, password: string) => {
-    const { user, admin_access } = await loginApi(prefix, password)
+  const login = useCallback(async (username: string, password: string) => {
+    const { user, admin_access } = await loginApi(username, password)
     setState({ status: "authenticated", user, adminAccess: admin_access })
   }, [])
 
-  const register = useCallback(async (prefix: string, password: string) => {
-    const { user, admin_access } = await registerApi(prefix, password)
-    setState({ status: "authenticated", user, adminAccess: admin_access })
-  }, [])
+  const register = useCallback(
+    async (input: { username: string; password: string; initialEmail: string }) => {
+      const { user, admin_access } = await registerApi(input)
+      setState({ status: "authenticated", user, adminAccess: admin_access })
+    },
+    [],
+  )
 
   const logout = useCallback(async () => {
     try {
@@ -86,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, login, register, logout, refresh }),
-    [state, login, register, logout, refresh],
+    () => ({ ...state, domains, login, register, logout, refresh }),
+    [state, domains, login, register, logout, refresh],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

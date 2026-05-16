@@ -6,7 +6,7 @@ import { config } from '../config.js'
 import { requireUser, requireWebhookSecret } from '../middleware/auth.js'
 import { parseEml } from '../services/emailParser.js'
 import {
-  emailHasRecipientPrefix,
+  emailBelongsToUser,
   getEmailById,
   getEmailListItem,
   getIdByBodySha256,
@@ -15,6 +15,7 @@ import {
   listEmails,
 } from '../services/emailRepo.js'
 import { emitEmailNew, subscribeEmailNew } from '../services/emailBus.js'
+import { listEmailsOfUser } from '../services/userEmailRepo.js'
 
 const email = new Hono()
 
@@ -55,7 +56,7 @@ email.post('/', requireWebhookSecret, async (c) => {
     const item = getEmailListItem(id)
     if (item && recipients.length > 0) {
       emitEmailNew({
-        prefixes: Array.from(new Set(recipients.map((r) => r.prefix))),
+        addresses: Array.from(new Set(recipients.map((r) => r.address))),
         item,
       })
     }
@@ -82,25 +83,35 @@ email.get('/', requireUser, (c) => {
   const user = c.get('user')
   const limit = Number(c.req.query('limit') ?? 20)
   const before = c.req.query('before') ?? null
+  const addressRaw = c.req.query('address')?.trim().toLowerCase() || null
+  const owned = listEmailsOfUser(user.id).map((x) => x.toLowerCase())
+  if (addressRaw && !owned.includes(addressRaw)) {
+    return c.json({ error: 'invalid address' }, 400)
+  }
   const items = listEmails({
     limit: Number.isFinite(limit) ? limit : 20,
     before,
-    userPrefix: user.prefix,
+    userId: user.id,
+    recipientAddress: addressRaw,
   })
   return c.json({ items })
 })
 
-/** SSE 实时推送：登录后订阅，自动按当前用户前缀过滤 */
+/** SSE 实时推送：登录后订阅，自动按当前用户拥有地址过滤 */
 email.get('/stream', requireUser, (c) => {
   const user = c.get('user')
+  const ownedSet = new Set(listEmailsOfUser(user.id).map((x) => x.toLowerCase()))
 
   return streamSSE(c, async (stream) => {
-    const queue: ReturnType<typeof getEmailListItem>[] = []
+    const queue: Array<{
+      item: NonNullable<ReturnType<typeof getEmailListItem>>
+      addresses: string[]
+    }> = []
     let wake: (() => void) | null = null
 
     const unsubscribe = subscribeEmailNew((e) => {
-      if (!e.prefixes.includes(user.prefix)) return
-      queue.push(e.item)
+      if (!e.addresses.some((addr) => ownedSet.has(addr))) return
+      queue.push({ item: e.item, addresses: e.addresses })
       const fn = wake
       wake = null
       fn?.()
@@ -123,12 +134,15 @@ email.get('/stream', requireUser, (c) => {
     while (!stream.aborted) {
       try {
         while (queue.length > 0 && !stream.aborted) {
-          const item = queue.shift()
-          if (!item) continue
+          const entry = queue.shift()
+          if (!entry) continue
           await stream.writeSSE({
             event: 'mail',
-            id: item.id,
-            data: JSON.stringify(item),
+            id: entry.item.id,
+            data: JSON.stringify({
+              item: entry.item,
+              addresses: entry.addresses,
+            }),
           })
         }
         if (stream.aborted) break
@@ -154,7 +168,7 @@ email.get('/stream', requireUser, (c) => {
 email.get('/:id/raw', requireUser, (c) => {
   const user = c.get('user')
   const id = c.req.param('id')
-  if (!emailHasRecipientPrefix(id, user.prefix)) {
+  if (!emailBelongsToUser(id, user.id)) {
     return c.json({ error: 'Not Found' }, 404)
   }
   const raw = getRawById(id)
@@ -167,7 +181,7 @@ email.get('/:id/raw', requireUser, (c) => {
 email.get('/:id', requireUser, (c) => {
   const user = c.get('user')
   const id = c.req.param('id')
-  if (!emailHasRecipientPrefix(id, user.prefix)) {
+  if (!emailBelongsToUser(id, user.id)) {
     return c.json({ error: 'Not Found' }, 404)
   }
   const row = getEmailById(id)

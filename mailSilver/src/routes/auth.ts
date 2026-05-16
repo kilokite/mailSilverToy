@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { deleteCookie, setCookie } from 'hono/cookie'
 import { config } from '../config.js'
+import { getDb } from '../db/sqlite.js'
 import {
   readSessionToken,
   requireUser,
@@ -12,18 +13,24 @@ import {
 } from '../services/sessionRepo.js'
 import { hashPassword, verifyPassword } from '../services/password.js'
 import {
-  PrefixTakenError,
+  UsernameTakenError,
   createUser,
-  getUserByPrefix,
+  getUserByUsername,
   isValidPassword,
-  isValidPrefix,
-  normalizePrefix,
+  isValidUsername,
+  normalizeUsername,
   touchLastLogin,
 } from '../services/userRepo.js'
+import {
+  EmailTakenError,
+  addEmailForUser,
+  addressLooksValid,
+  listEmailsOfUser,
+} from '../services/userEmailRepo.js'
 
 const auth = new Hono()
 
-type Body = { prefix?: unknown; password?: unknown }
+type Body = { username?: unknown; password?: unknown; initialEmail?: unknown }
 
 function setSessionCookie(c: Context, token: string, expiresAt: string) {
   setCookie(c, config.auth.cookieName, token, {
@@ -35,35 +42,50 @@ function setSessionCookie(c: Context, token: string, expiresAt: string) {
   })
 }
 
-function readBody(body: unknown): { prefix: string; password: string } | null {
+function readBody(
+  body: unknown,
+): { username: string; password: string; initialEmail?: string } | null {
   if (!body || typeof body !== 'object') return null
   const b = body as Body
-  if (typeof b.prefix !== 'string' || typeof b.password !== 'string') return null
-  return { prefix: b.prefix, password: b.password }
+  if (typeof b.username !== 'string' || typeof b.password !== 'string') return null
+  const out: { username: string; password: string; initialEmail?: string } = {
+    username: b.username,
+    password: b.password,
+  }
+  if (typeof b.initialEmail === 'string') out.initialEmail = b.initialEmail
+  return out
 }
 
-function publicEmail(prefix: string): string {
-  return `${prefix}${config.email.domain}`
+function adminAccessForUsername(username: string): boolean {
+  const au = config.auth.adminUsername
+  return Boolean(au && username.toLowerCase() === au)
 }
 
-function adminAccessForPrefix(prefix: string): boolean {
-  const ap = config.auth.adminPrefix
-  return Boolean(ap && prefix.toLowerCase() === ap)
+function buildUserPayload(user: { id: string; username: string }) {
+  return {
+    id: user.id,
+    username: user.username,
+    emails: listEmailsOfUser(user.id),
+  }
 }
 
 auth.post('/register', async (c) => {
   const body = readBody(await c.req.json().catch(() => null))
   if (!body) return c.json({ error: 'invalid body' }, 400)
 
-  const prefix = normalizePrefix(body.prefix)
-  if (!isValidPrefix(prefix)) {
+  const username = normalizeUsername(body.username)
+  const initialEmail = body.initialEmail?.trim().toLowerCase() ?? ''
+  if (!isValidUsername(username)) {
     return c.json(
       {
         error:
-          '前缀仅支持小写字母 / 数字 / . _ -，首尾必须是字母数字，长度 1-32',
+          '用户名仅支持小写字母 / 数字 / . _ -，首尾必须是字母数字，长度 1-32',
       },
       400,
     )
+  }
+  if (!initialEmail || !addressLooksValid(initialEmail)) {
+    return c.json({ error: '初始邮箱不合法或后缀不受支持' }, 400)
   }
   if (!isValidPassword(body.password)) {
     return c.json({ error: '密码长度需为 6-128 位' }, 400)
@@ -71,22 +93,31 @@ auth.post('/register', async (c) => {
 
   const { hash, salt } = await hashPassword(body.password)
   try {
-    const user = createUser({ prefix, passwordHash: hash, passwordSalt: salt })
+    const tx = getDb().transaction(() => {
+      const user = createUser({
+        username,
+        passwordHash: hash,
+        passwordSalt: salt,
+      })
+      addEmailForUser(user.id, initialEmail)
+      return user
+    })
+    const user = tx()
     const session = createSession(user.id)
     touchLastLogin(user.id)
     setSessionCookie(c, session.token, session.expires_at)
     return c.json({
       ok: true,
-      user: {
-        id: user.id,
-        prefix: user.prefix,
-        email: publicEmail(user.prefix),
-      },
-      admin_access: adminAccessForPrefix(user.prefix),
+      user: buildUserPayload(user),
+      admin_access: adminAccessForUsername(user.username),
+      domains: config.email.domains,
     })
   } catch (e) {
-    if (e instanceof PrefixTakenError) {
-      return c.json({ error: '该前缀已被注册' }, 409)
+    if (e instanceof UsernameTakenError) {
+      return c.json({ error: '该用户名已被注册' }, 409)
+    }
+    if (e instanceof EmailTakenError) {
+      return c.json({ error: '该邮箱已被占用' }, 409)
     }
     throw e
   }
@@ -96,12 +127,12 @@ auth.post('/login', async (c) => {
   const body = readBody(await c.req.json().catch(() => null))
   if (!body) return c.json({ error: 'invalid body' }, 400)
 
-  const prefix = normalizePrefix(body.prefix)
-  if (!isValidPrefix(prefix) || !isValidPassword(body.password)) {
+  const username = normalizeUsername(body.username)
+  if (!isValidUsername(username) || !isValidPassword(body.password)) {
     return c.json({ error: '账号或密码不正确' }, 401)
   }
 
-  const user = getUserByPrefix(prefix)
+  const user = getUserByUsername(username)
   if (!user) {
     return c.json({ error: '账号或密码不正确' }, 401)
   }
@@ -119,12 +150,9 @@ auth.post('/login', async (c) => {
   setSessionCookie(c, session.token, session.expires_at)
   return c.json({
     ok: true,
-    user: {
-      id: user.id,
-      prefix: user.prefix,
-      email: publicEmail(user.prefix),
-    },
-    admin_access: adminAccessForPrefix(user.prefix),
+    user: buildUserPayload(user),
+    admin_access: adminAccessForUsername(user.username),
+    domains: config.email.domains,
   })
 })
 
@@ -138,14 +166,13 @@ auth.post('/logout', (c) => {
 auth.get('/me', (c) => {
   const token = readSessionToken(c)
   const user = resolveUser(token)
-  if (!user) return c.json({ user: null, admin_access: false })
+  if (!user) {
+    return c.json({ user: null, admin_access: false, domains: config.email.domains })
+  }
   return c.json({
-    user: {
-      id: user.id,
-      prefix: user.prefix,
-      email: publicEmail(user.prefix),
-    },
-    admin_access: adminAccessForPrefix(user.prefix),
+    user: buildUserPayload(user),
+    admin_access: adminAccessForUsername(user.username),
+    domains: config.email.domains,
   })
 })
 
@@ -153,12 +180,9 @@ auth.get('/me', (c) => {
 auth.get('/session', requireUser, (c) => {
   const user = c.get('user')
   return c.json({
-    user: {
-      id: user.id,
-      prefix: user.prefix,
-      email: publicEmail(user.prefix),
-    },
-    admin_access: adminAccessForPrefix(user.prefix),
+    user: buildUserPayload(user),
+    admin_access: adminAccessForUsername(user.username),
+    domains: config.email.domains,
   })
 })
 

@@ -25,7 +25,10 @@ export const requireWebhookSecret = createMiddleware(async (c, next) => {
   await next()
 })
 
-export type SessionUser = Pick<UserRow, 'id' | 'prefix' | 'created_at' | 'last_login_at'>
+export type SessionUser = Pick<
+  UserRow,
+  'id' | 'username' | 'created_at' | 'last_login_at'
+>
 
 type AuthVars = {
   user: SessionUser
@@ -50,7 +53,7 @@ export function resolveUser(token: string | null): SessionUser | null {
   if (!u) return null
   return {
     id: u.id,
-    prefix: u.prefix,
+    username: u.username,
     created_at: u.created_at,
     last_login_at: u.last_login_at,
   }
