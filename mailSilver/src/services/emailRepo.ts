@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/sqlite.js'
-import { config } from '../config.js'
+import { config, listEmailDomainSuffixes } from '../config.js'
 import type { ParsedEmailRow } from './emailParser.js'
 
 export type ParseStatus = 'pending' | 'ok' | 'error'
@@ -313,7 +313,7 @@ export function extractDomainRecipients(
   parsedRow: ParsedEmailRow | null,
 ): Array<{ address: string }> {
   if (!parsedRow) return []
-  const domains = config.email.domains
+  const domains = listEmailDomainSuffixes()
   const fields = [parsedRow.to_json, parsedRow.cc_json, parsedRow.bcc_json]
   const out = new Map<string, { address: string }>()
   for (const field of fields) {

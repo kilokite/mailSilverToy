@@ -14,7 +14,7 @@ const HEADER = 'x-webhook-secret'
 export const requireWebhookSecret = createMiddleware(async (c, next) => {
   const expected = config.email.secret
   if (!expected.trim()) {
-    return c.text('EMAIL_SECRET is not configured', 503)
+    return c.text('email.secret is not configured', 503)
   }
   const got = c.req.header(HEADER) ?? ''
   const a = Buffer.from(got, 'utf8')

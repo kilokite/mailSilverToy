@@ -1,4 +1,3 @@
-import './loadEnv.js'
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { config, isDev } from './config.js'
@@ -6,10 +5,10 @@ import { config, isDev } from './config.js'
 if (!config.email.secret.trim()) {
   if (isDev) {
     console.warn(
-      '[config] EMAIL_SECRET 未设置：POST /api/email 将返回 503，直至配置密钥。',
+      '[config] email.secret 未设置：POST /api/email 将返回 503，直至在 config.json 中配置。',
     )
   } else {
-    throw new Error('EMAIL_SECRET is required in non-development mode')
+    throw new Error('email.secret is required in config.json for non-development mode')
   }
 }
 

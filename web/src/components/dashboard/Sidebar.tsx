@@ -64,6 +64,7 @@ export function Sidebar({
   onMailboxFilterChange,
   onLogout,
   onUserUpdated,
+  onCompose,
 }: {
   active: Folder
   onChange: (f: Folder) => void
@@ -74,6 +75,7 @@ export function Sidebar({
   onMailboxFilterChange: (filter: MailboxFilter) => void
   onLogout: () => void
   onUserUpdated: (emails: string[]) => void
+  onCompose: () => void
 }) {
   const { adminAccess, domains, refresh } = useAuth()
   const [copied, setCopied] = useState(false)
@@ -212,7 +214,12 @@ export function Sidebar({
             ) : null}
           </div>
 
-          <Button className="w-full justify-start gap-2" size="sm" disabled>
+          <Button
+            className="w-full justify-start gap-2"
+            size="sm"
+            disabled={user.emails.length === 0}
+            onClick={onCompose}
+          >
             <PenSquare className="h-4 w-4" />
             写邮件
           </Button>

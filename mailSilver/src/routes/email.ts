@@ -18,6 +18,11 @@ import {
 } from '../services/emailRepo.js'
 import { emitEmailNew, subscribeEmailNew } from '../services/emailBus.js'
 import { listEmailsOfUser } from '../services/userEmailRepo.js'
+import {
+  parseAddressList,
+  parseOptionalAddressList,
+} from '../services/parseRecipients.js'
+import { sendMail } from '../services/sendMail.js'
 
 const email = new Hono()
 
@@ -85,6 +90,70 @@ email.post('/', requireWebhookSecret, async (c) => {
     }
     throw e
   }
+})
+
+email.post('/send', requireUser, async (c) => {
+  const user = c.get('user')
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid json' }, 400)
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'invalid body' }, 400)
+  }
+  const b = body as Record<string, unknown>
+  const from =
+    typeof b.from === 'string' ? b.from.trim().toLowerCase() : ''
+  const subject =
+    typeof b.subject === 'string' ? b.subject.trim() : ''
+  const to = parseAddressList(b.to)
+  const cc = parseOptionalAddressList(b.cc)
+  const bcc = parseOptionalAddressList(b.bcc)
+  const replyTo = parseOptionalAddressList(b.replyTo)
+
+  if (!from) return c.json({ error: 'from required' }, 400)
+  if (!subject) return c.json({ error: 'subject required' }, 400)
+  if (subject.length > 998) return c.json({ error: 'subject too long' }, 400)
+  if (!to) return c.json({ error: 'invalid to' }, 400)
+  if (cc === null) return c.json({ error: 'invalid cc' }, 400)
+  if (bcc === null) return c.json({ error: 'invalid bcc' }, 400)
+  if (replyTo === null) return c.json({ error: 'invalid replyTo' }, 400)
+
+  const owned = new Set(listEmailsOfUser(user.id).map((x) => x.toLowerCase()))
+  if (!owned.has(from)) {
+    return c.json({ error: '无权使用该发件地址' }, 403)
+  }
+
+  const text = typeof b.text === 'string' ? b.text : undefined
+  const html = typeof b.html === 'string' ? b.html : undefined
+  if (!text?.trim() && !html?.trim()) {
+    return c.json({ error: 'text or html required' }, 400)
+  }
+
+  const result = await sendMail({
+    from,
+    to,
+    subject,
+    text,
+    html,
+    cc: cc.length > 0 ? cc : undefined,
+    bcc: bcc.length > 0 ? bcc : undefined,
+    replyTo: replyTo.length > 0 ? replyTo : undefined,
+  })
+
+  if (!result.ok) {
+    const status =
+      result.code === 'resend_not_configured'
+        ? 503
+        : result.code === 'send_failed'
+          ? 502
+          : 400
+    return c.json({ error: result.message, code: result.code }, status)
+  }
+
+  return c.json({ ok: true, id: result.id })
 })
 
 email.get('/', requireUser, (c) => {

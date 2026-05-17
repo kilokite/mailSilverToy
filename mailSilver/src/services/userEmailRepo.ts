@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
-import { config } from '../config.js'
+import { getMailDomainConfig } from '../config.js'
 import { getDb } from '../db/sqlite.js'
 import { getUserById } from './userRepo.js'
 
@@ -18,7 +18,7 @@ export function splitAddress(address: string): { local: string; domain: string }
   const local = lower.slice(0, at)
   const domain = lower.slice(at)
   if (!LOCAL_RE.test(local)) return null
-  if (!config.email.domains.includes(domain)) return null
+  if (!getMailDomainConfig(domain)) return null
   return { local, domain }
 }
 

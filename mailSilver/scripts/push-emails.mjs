@@ -10,11 +10,11 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-loadDotEnv(resolve(root, '.env'))
+const fileConfig = loadConfigFile(resolve(root, 'config.json'))
 
-const port = process.env.PORT ?? '23879'
-const secret = process.env.EMAIL_SECRET ?? ''
-const defaultTo = pickDefaultRecipient(process.env.MAIL_DOMAINS)
+const port = fileConfig.port ?? 23879
+const secret = fileConfig.email?.secret ?? ''
+const defaultTo = pickDefaultRecipient(fileConfig.email?.domains)
 
 const rl = createInterface({ input, output })
 
@@ -33,7 +33,7 @@ try {
   const to = toRaw.trim() || defaultTo
 
   if (!secret.trim()) {
-    console.error('错误：未设置 EMAIL_SECRET（请在 .env 中配置）')
+    console.error('错误：未设置 email.secret（请在 config.json 中配置）')
     process.exit(1)
   }
 
@@ -77,33 +77,38 @@ try {
   rl.close()
 }
 
-function loadDotEnv(path) {
-  if (!existsSync(path)) return
-  const text = readFileSync(path, 'utf8')
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const eq = trimmed.indexOf('=')
-    if (eq <= 0) continue
-    const key = trimmed.slice(0, eq).trim()
-    let val = trimmed.slice(eq + 1).trim()
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1)
-    }
-    if (!(key in process.env)) process.env[key] = val
+function loadConfigFile(path) {
+  if (!existsSync(path)) return {}
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'))
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  } catch (err) {
+    console.error(`错误：无法解析 ${path}: ${err.message}`)
+    process.exit(1)
   }
 }
 
-function pickDefaultRecipient(domainsCsv) {
-  const first = (domainsCsv ?? '@kt.sb')
-    .split(',')
-    .map((s) => s.trim())
-    .find((s) => s.startsWith('@'))
-  const domain = first ?? '@kt.sb'
+function pickDefaultRecipient(domains) {
+  const suffixes = domainSuffixesFromConfig(domains)
+  const domain = suffixes[0] ?? '@kt.sb'
   return `test${domain}`
+}
+
+function domainSuffixesFromConfig(domains) {
+  const items = Array.isArray(domains)
+    ? domains
+    : typeof domains === 'string'
+      ? domains.split(',')
+      : ['@kt.sb']
+  return items
+    .map((item) => {
+      if (typeof item === 'string') return item.trim().toLowerCase()
+      if (item && typeof item === 'object' && typeof item.suffix === 'string') {
+        return item.suffix.trim().toLowerCase()
+      }
+      return ''
+    })
+    .filter((s) => s.startsWith('@'))
 }
 
 function parsePositiveInt(s) {

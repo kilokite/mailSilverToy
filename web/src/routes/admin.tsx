@@ -3,10 +3,12 @@ import { AdminShell } from "@/components/admin/AdminShell"
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: ({ context }) => {
-    if (context.auth.status !== "authenticated") {
+    const { auth } = context
+    if (!auth || auth.status === "loading") return
+    if (auth.status !== "authenticated") {
       throw redirect({ to: "/login" })
     }
-    if (!context.auth.adminAccess) {
+    if (!auth.adminAccess) {
       throw redirect({ to: "/" })
     }
   },

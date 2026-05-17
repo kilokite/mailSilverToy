@@ -4,6 +4,7 @@ import { Sidebar, type Folder } from "@/components/dashboard/Sidebar"
 import { HooksPage } from "@/components/dashboard/HooksPage"
 import { MailList } from "@/components/dashboard/MailList"
 import { MailView } from "@/components/dashboard/MailView"
+import { ComposeMailDialog } from "@/components/dashboard/ComposeMailDialog"
 import {
   getEmail,
   listEmails,
@@ -64,6 +65,7 @@ export function MailApp({ user }: { user: AuthUser }) {
   const [detailError, setDetailError] = useState<string | null>(null)
 
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("connecting")
+  const [composeOpen, setComposeOpen] = useState(false)
 
   const detailCache = useRef<Map<string, EmailDetail>>(new Map())
   const detailReqId = useRef(0)
@@ -309,6 +311,15 @@ export function MailApp({ user }: { user: AuthUser }) {
             await logout()
             void navigate({ to: "/login", replace: true })
           })()
+        }
+        onCompose={() => setComposeOpen(true)}
+      />
+      <ComposeMailDialog
+        open={composeOpen}
+        onOpenChange={setComposeOpen}
+        user={localUser}
+        defaultFrom={
+          mailboxFilter !== "all" ? mailboxFilter : undefined
         }
       />
       {folder === "hooks" ? (

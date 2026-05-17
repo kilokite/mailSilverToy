@@ -10,8 +10,25 @@ import {
   normalizeAddressInput,
 } from '../services/userEmailRepo.js'
 import { emitHook } from '../services/hooks/index.js'
+import { getMailDomainConfig } from '../config.js'
 
 const me = new Hono()
+
+me.get('/send-capabilities', requireUser, (c) => {
+  const user = c.get('user')
+  const emails = listEmailsOfUser(user.id)
+  return c.json({
+    items: emails.map((address) => {
+      const at = address.lastIndexOf('@')
+      const suffix = at > 0 ? address.slice(at) : ''
+      const cfg = getMailDomainConfig(suffix)
+      return {
+        address,
+        can_send: Boolean(cfg?.resendApiKey?.trim()),
+      }
+    }),
+  })
+})
 
 me.get('/emails', requireUser, (c) => {
   const user = c.get('user')

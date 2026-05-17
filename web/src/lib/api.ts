@@ -257,6 +257,38 @@ export function getMyEmails() {
   return request<{ emails: string[] }>(`/api/me/emails`)
 }
 
+export type SendCapability = { address: string; can_send: boolean }
+
+export function getSendCapabilities() {
+  return request<{ items: SendCapability[] }>(`/api/me/send-capabilities`)
+}
+
+export function sendOutboundMail(input: {
+  from: string
+  to: string
+  subject: string
+  text?: string
+  html?: string
+  cc?: string
+  bcc?: string
+  replyTo?: string
+}) {
+  const body: Record<string, string> = {
+    from: input.from,
+    to: input.to,
+    subject: input.subject,
+  }
+  if (input.text) body.text = input.text
+  if (input.html) body.html = input.html
+  if (input.cc?.trim()) body.cc = input.cc.trim()
+  if (input.bcc?.trim()) body.bcc = input.bcc.trim()
+  if (input.replyTo?.trim()) body.replyTo = input.replyTo.trim()
+  return request<{ ok: true; id: string }>(`/api/email/send`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
 export function addMyEmail(payload: { address?: string; prefix?: string; domain?: string }) {
   return request<{ ok: true; emails: string[] }>(`/api/me/emails`, {
     method: "POST",

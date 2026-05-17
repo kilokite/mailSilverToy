@@ -1,5 +1,16 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  loadConfigFile,
+  type MailDomainFileEntry,
+} from './loadConfig.js'
+
+export interface MailDomainConfig {
+  /** 邮箱后缀，小写，形如 `@kt.sb` */
+  suffix: string
+  /** 该域名在 Resend 的 API Key；未配置则无法代发 */
+  resendApiKey?: string
+}
 
 export interface AppConfig {
   port: number
@@ -9,9 +20,8 @@ export interface AppConfig {
     secret: string
     dbPath: string
     maxRawBytes: number
-    /** 支持的邮箱后缀列表（均为小写，形如 `@kt.sb`） */
-    domains: string[]
-    /** 默认邮箱后缀（domains[0]） */
+    domains: MailDomainConfig[]
+    /** 默认邮箱后缀（domains[0].suffix） */
     defaultDomain: string
   }
   auth: {
@@ -21,8 +31,8 @@ export interface AppConfig {
     cookieSecure: boolean
     /** Cookie 名 */
     cookieName: string
-    /** 与该用户名（忽略大小写）一致的用户可访问 /api/admin/* */
-    adminUsername: string | null
+    /** 可访问 /api/admin/* 的用户名（均为小写） */
+    adminUsername: string[]
   }
 }
 
@@ -30,46 +40,89 @@ const defaultMaxRaw = 25 * 1024 * 1024
 const defaultSessionTtl = 30 * 24 * 3600 * 1000
 
 const publicPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
-const publicDir = process.env.PUBLIC_DIR ?? publicPath
+const file = loadConfigFile()
 
-function parseBool(v: string | undefined, fallback: boolean): boolean {
-  if (v == null) return fallback
-  const s = v.trim().toLowerCase()
-  if (['1', 'true', 'yes', 'on'].includes(s)) return true
-  if (['0', 'false', 'no', 'off'].includes(s)) return false
-  return fallback
+function parseAdminUsernames(v: string[] | undefined): string[] {
+  if (!Array.isArray(v)) return []
+  const parsed = v
+    .map((x) => String(x).trim().toLowerCase())
+    .filter((x) => x.length > 0)
+  return Array.from(new Set(parsed))
 }
 
-function parseMailDomains(v: string | undefined): string[] {
-  const parsed = (v ?? '')
-    .split(',')
-    .map((x) => x.trim().toLowerCase())
-    .filter((x) => x.startsWith('@') && x.length > 1)
-  return parsed.length > 0 ? Array.from(new Set(parsed)) : ['@kt.sb']
+function parseMailDomainConfigs(
+  v: MailDomainFileEntry[] | string | undefined,
+): MailDomainConfig[] {
+  const items: MailDomainFileEntry[] =
+    typeof v === 'string'
+      ? v.split(',')
+      : Array.isArray(v)
+        ? v
+        : []
+  const out: MailDomainConfig[] = []
+  const seen = new Set<string>()
+  for (const item of items) {
+    let suffix: string
+    let resendApiKey: string | undefined
+    if (typeof item === 'string') {
+      suffix = item.trim().toLowerCase()
+    } else if (item && typeof item === 'object') {
+      suffix = String(item.suffix ?? '').trim().toLowerCase()
+      const key = item.resendApiKey
+      resendApiKey =
+        typeof key === 'string' && key.trim() ? key.trim() : undefined
+    } else {
+      continue
+    }
+    if (!suffix.startsWith('@') || suffix.length <= 1) continue
+    if (seen.has(suffix)) continue
+    seen.add(suffix)
+    out.push({ suffix, resendApiKey })
+  }
+  return out.length > 0 ? out : [{ suffix: '@kt.sb' }]
 }
 
-const mailDomains = parseMailDomains(process.env.MAIL_DOMAINS)
+const publicDir = file.publicDir ?? publicPath
+const mailDomains = parseMailDomainConfigs(file.email?.domains)
 
 export const config: AppConfig = {
-  port: Number(process.env.PORT ?? 23879),
+  port: file.port ?? 23879,
   publicDir,
-  spaIndex: process.env.SPA_INDEX ?? path.join(publicDir, 'index.html'),
+  spaIndex: file.spaIndex ?? path.join(publicDir, 'index.html'),
   email: {
-    secret: process.env.EMAIL_SECRET ?? '',
-    dbPath: process.env.DB_PATH ?? './data/mail.db',
-    maxRawBytes: Number(process.env.MAX_RAW_BYTES ?? defaultMaxRaw),
+    secret: file.email?.secret ?? '',
+    dbPath: file.email?.dbPath ?? './data/mail.db',
+    maxRawBytes: file.email?.maxRawBytes ?? defaultMaxRaw,
     domains: mailDomains,
-    defaultDomain: mailDomains[0],
+    defaultDomain: mailDomains[0].suffix,
   },
   auth: {
-    sessionTtlMs: Number(process.env.SESSION_TTL_MS ?? defaultSessionTtl),
-    cookieSecure: parseBool(process.env.COOKIE_SECURE, process.env.NODE_ENV === 'production'),
-    cookieName: process.env.COOKIE_NAME ?? 'mail_session',
-    adminUsername: (() => {
-      const raw = process.env.ADMIN_USERNAME?.trim().toLowerCase()
-      return raw ? raw : null
-    })(),
+    sessionTtlMs: file.auth?.sessionTtlMs ?? defaultSessionTtl,
+    cookieSecure:
+      file.auth?.cookieSecure ?? process.env.NODE_ENV === 'production',
+    cookieName: file.auth?.cookieName ?? 'mail_session',
+    adminUsername: parseAdminUsernames(file.auth?.adminUsername),
   },
+}
+
+export function listEmailDomainSuffixes(): string[] {
+  return config.email.domains.map((d) => d.suffix)
+}
+
+export function getMailDomainConfig(
+  suffix: string,
+): MailDomainConfig | undefined {
+  const normalized = suffix.trim().toLowerCase()
+  return config.email.domains.find((d) => d.suffix === normalized)
+}
+
+export function getMailDomainConfigForAddress(
+  address: string,
+): MailDomainConfig | undefined {
+  const lower = address.trim().toLowerCase()
+  const at = lower.lastIndexOf('@')
+  if (at <= 0) return undefined
+  return getMailDomainConfig(lower.slice(at))
 }
 
 export const isDev = process.env.NODE_ENV === 'development'

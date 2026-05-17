@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { deleteCookie, setCookie } from 'hono/cookie'
-import { config } from '../config.js'
+import { config, listEmailDomainSuffixes } from '../config.js'
 import { getDb } from '../db/sqlite.js'
 import {
   readSessionToken,
@@ -59,8 +59,7 @@ function readBody(
 }
 
 function adminAccessForUsername(username: string): boolean {
-  const au = config.auth.adminUsername
-  return Boolean(au && username.toLowerCase() === au)
+  return config.auth.adminUsername.includes(username.toLowerCase())
 }
 
 function buildUserPayload(user: { id: string; username: string; max_emails: number }) {
@@ -118,7 +117,7 @@ auth.post('/register', async (c) => {
       ok: true,
       user: buildUserPayload(user),
       admin_access: adminAccessForUsername(user.username),
-      domains: config.email.domains,
+      domains: listEmailDomainSuffixes(),
     })
   } catch (e) {
     if (e instanceof UsernameTakenError) {
@@ -166,7 +165,7 @@ auth.post('/login', async (c) => {
     ok: true,
     user: buildUserPayload(user),
     admin_access: adminAccessForUsername(user.username),
-    domains: config.email.domains,
+    domains: listEmailDomainSuffixes(),
   })
 })
 
@@ -181,12 +180,12 @@ auth.get('/me', (c) => {
   const token = readSessionToken(c)
   const user = resolveUser(token)
   if (!user) {
-    return c.json({ user: null, admin_access: false, domains: config.email.domains })
+    return c.json({ user: null, admin_access: false, domains: listEmailDomainSuffixes() })
   }
   return c.json({
     user: buildUserPayload(user),
     admin_access: adminAccessForUsername(user.username),
-    domains: config.email.domains,
+    domains: listEmailDomainSuffixes(),
   })
 })
 
@@ -196,7 +195,7 @@ auth.get('/session', requireUser, (c) => {
   return c.json({
     user: buildUserPayload(user),
     admin_access: adminAccessForUsername(user.username),
-    domains: config.email.domains,
+    domains: listEmailDomainSuffixes(),
   })
 })
 

@@ -7,10 +7,11 @@ import { router } from "./router"
 export function RouterShell() {
   const auth = useAuth()
 
-  // auth 变化后，主动让当前匹配重新跑 beforeLoad，
-  // 这样登录/注册成功能立即被 / 路由的守卫接管并跳转，
-  // 登出/会话过期也能被踢回 /login。
+  // auth 就绪后再同步 context 并 invalidate，避免 loading 阶段
+  // 在尚无 RouterProvider 时用 undefined auth 跑 beforeLoad。
   useEffect(() => {
+    if (auth.status === "loading") return
+    router.update({ context: { auth } })
     void router.invalidate()
   }, [auth])
 

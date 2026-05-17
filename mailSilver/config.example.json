@@ -1,0 +1,23 @@
+{
+  "port": 23879,
+  "email": {
+    "secret": "change-me",
+    "dbPath": "./data/mail.db",
+    "maxRawBytes": 26214400,
+    "domains": [
+      {
+        "suffix": "@kt.sb",
+        "resendApiKey": "re_xxxxxxxx"
+      },
+      {
+        "suffix": "@example.com"
+      }
+    ]
+  },
+  "auth": {
+    "sessionTtlMs": 2592000000,
+    "cookieSecure": false,
+    "cookieName": "mail_session",
+    "adminUsername": ["admin"]
+  }
+}
