@@ -26,6 +26,7 @@ import {
   createHookSubscription,
   deleteAdminHookSubscription,
   deleteHookSubscription,
+  getMyEmails,
   listAdminHookDeliveries,
   listAdminHookEvents,
   listAdminHookSubscriptions,
@@ -67,6 +68,26 @@ function statusClass(status: HookDelivery["status"]) {
   return "bg-amber-500/15 text-amber-700"
 }
 
+/** 从订阅 `filter_json` 解析指定监听地址；`null` 表示监听全部邮箱 */
+function parseFilterAddresses(filterJson: string | null): string[] | null {
+  if (!filterJson) return null
+  try {
+    const parsed = JSON.parse(filterJson) as { addresses?: unknown }
+    if (!Array.isArray(parsed.addresses)) return null
+    return parsed.addresses.filter((a): a is string => typeof a === "string")
+  } catch {
+    return null
+  }
+}
+
+/** 列表展示的监听范围摘要 */
+function formatFilterLabel(filterJson: string | null): string {
+  const addrs = parseFilterAddresses(filterJson)
+  if (!addrs) return "全部收件邮箱"
+  if (addrs.length === 1) return addrs[0]
+  return `${addrs.length} 个邮箱`
+}
+
 export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
   const [events, setEvents] = useState<HookEventMeta[]>([])
   const [items, setItems] = useState<HookSubscription[]>([])
@@ -83,8 +104,12 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
   const [createSecret, setCreateSecret] = useState("")
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [myEmails, setMyEmails] = useState<string[]>([])
+  const [createWatchAll, setCreateWatchAll] = useState(true)
+  const [createFilterAddresses, setCreateFilterAddresses] = useState<string[]>([])
 
   const isAdminMode = mode === "admin"
+  const isEmailNewEvent = createEvent === "email:new"
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,6 +122,10 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
       setEvents(ev)
       setItems(subs)
       setCreateEvent((prev) => prev || ev[0]?.name || "")
+      if (!isAdminMode) {
+        const { emails } = await getMyEmails()
+        setMyEmails(emails)
+      }
     } catch (e) {
       setItems([])
       setError(e instanceof ApiError ? e.message : String(e))
@@ -142,14 +171,30 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
     setCreateSubmitting(true)
     try {
       const createFn = isAdminMode ? createAdminHookSubscription : createHookSubscription
+      const filter =
+        !isAdminMode && createEvent === "email:new" && !createWatchAll
+          ? { addresses: createFilterAddresses }
+          : undefined
+      if (
+        !isAdminMode &&
+        createEvent === "email:new" &&
+        !createWatchAll &&
+        createFilterAddresses.length === 0
+      ) {
+        setFormError("请至少选择一个监听邮箱，或选择监听全部")
+        return
+      }
       await createFn({
         event: createEvent,
         target_url,
         secret: createSecret.trim() || null,
+        ...(!isAdminMode && createEvent === "email:new" ? { filter: filter ?? null } : {}),
       })
       setCreateOpen(false)
       setCreateUrl("")
       setCreateSecret("")
+      setCreateWatchAll(true)
+      setCreateFilterAddresses([])
       await load()
     } catch (e) {
       setFormError(e instanceof ApiError ? e.message : String(e))
@@ -237,6 +282,8 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
             className="gap-1.5"
             onClick={() => {
               setFormError(null)
+              setCreateWatchAll(true)
+              setCreateFilterAddresses(myEmails.length === 1 ? [...myEmails] : [])
               setCreateOpen(true)
             }}
           >
@@ -280,7 +327,11 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
               type="button"
               size="sm"
               className="mt-4 gap-1.5"
-              onClick={() => setCreateOpen(true)}
+              onClick={() => {
+                setCreateWatchAll(true)
+                setCreateFilterAddresses(myEmails.length === 1 ? [...myEmails] : [])
+                setCreateOpen(true)
+              }}
             >
               <Plus className="h-3.5 w-3.5" />
               创建第一个订阅
@@ -330,6 +381,20 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{eventLabel(sub.event)}</p>
+                      {sub.event === "email:new" && !isAdminMode ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          监听：
+                          <span className="font-mono text-foreground/80">
+                            {formatFilterLabel(sub.filter_json)}
+                          </span>
+                          {parseFilterAddresses(sub.filter_json) ? (
+                            <span className="ml-1 text-muted-foreground">
+                              (
+                              {parseFilterAddresses(sub.filter_json)!.join(", ")})
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
                       <p
                         className="mt-2 break-all font-mono text-xs text-foreground"
                         title={sub.target_url}
@@ -499,6 +564,64 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                 autoComplete="off"
               />
             </div>
+            {!isAdminMode && isEmailNewEvent ? (
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">监听邮箱</p>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="watch-scope"
+                    checked={createWatchAll}
+                    onChange={() => setCreateWatchAll(true)}
+                  />
+                  全部收件邮箱
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="watch-scope"
+                    checked={!createWatchAll}
+                    onChange={() => {
+                      setCreateWatchAll(false)
+                      if (createFilterAddresses.length === 0 && myEmails.length > 0) {
+                        setCreateFilterAddresses([myEmails[0]])
+                      }
+                    }}
+                  />
+                  仅指定邮箱
+                </label>
+                {!createWatchAll ? (
+                  <div className="ml-1 max-h-36 space-y-1.5 overflow-y-auto border-l pl-3">
+                    {myEmails.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">暂无邮箱，请先在侧栏添加</p>
+                    ) : (
+                      myEmails.map((addr) => {
+                        const checked = createFilterAddresses.includes(addr)
+                        return (
+                          <label
+                            key={addr}
+                            className="flex cursor-pointer items-center gap-2 font-mono text-xs"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setCreateFilterAddresses((prev) =>
+                                  checked
+                                    ? prev.filter((a) => a !== addr)
+                                    : [...prev, addr],
+                                )
+                              }}
+                            />
+                            {addr}
+                          </label>
+                        )
+                      })
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>

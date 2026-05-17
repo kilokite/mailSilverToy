@@ -259,6 +259,7 @@ export type HookSubscription = {
   target_url: string
   secret: string | null
   active: boolean
+  /** `email:new` 的 `filter_json` 字符串，结构同 {@link HookEmailFilter} */
   filter_json: string | null
   headers_json: string | null
   created_at: string
@@ -286,11 +287,20 @@ export function listHookSubscriptions() {
   return request<{ items: HookSubscription[] }>(`/api/hooks/subscriptions`)
 }
 
+/**
+ * `email:new` 订阅的监听范围。
+ * - `null`：该用户全部收件邮箱
+ * - `{ addresses }`：仅列出的地址（须为当前用户已拥有）
+ */
+export type HookEmailFilter = { addresses: string[] } | null
+
 export function createHookSubscription(input: {
   event: string
   target_url: string
   secret?: string | null
   headers?: Record<string, string> | null
+  /** 仅 `email:new` 有效 */
+  filter?: HookEmailFilter
 }) {
   return request<{ ok: true; item: HookSubscription }>(`/api/hooks/subscriptions`, {
     method: "POST",
@@ -305,6 +315,8 @@ export function updateHookSubscription(
     secret?: string | null
     active?: boolean
     headers?: Record<string, string> | null
+    /** 仅 `email:new` 有效 */
+    filter?: HookEmailFilter
   },
 ) {
   return request<{ ok: true; item: HookSubscription }>(

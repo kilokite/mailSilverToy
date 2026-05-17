@@ -3,6 +3,7 @@ import { requireUser } from '../middleware/auth.js'
 import { buildTestPayload, HOOK_EVENTS, isHookEventName } from '../services/hooks/index.js'
 import { emitHook } from '../services/hooks/index.js'
 import { listDeliveriesBySubscription } from '../services/hooks/deliveryRepo.js'
+import { parseEmailFilterInput } from '../services/hooks/filter.js'
 import {
   createSubscription,
   deleteSubscriptionOwnedBy,
@@ -10,6 +11,7 @@ import {
   listSubscriptionsByOwner,
   updateSubscriptionOwnedBy,
 } from '../services/hooks/subscriptionRepo.js'
+import { listEmailsOfUser } from '../services/userEmailRepo.js'
 
 const hooks = new Hono()
 
@@ -18,6 +20,8 @@ type CreateBody = {
   target_url?: unknown
   secret?: unknown
   headers?: unknown
+  /** `email:new` 专用：`{ addresses: string[] }` 或 `null` 表示监听全部收件邮箱 */
+  filter?: unknown
 }
 
 type PatchBody = {
@@ -25,6 +29,8 @@ type PatchBody = {
   secret?: unknown
   active?: unknown
   headers?: unknown
+  /** `email:new` 专用：更新监听范围，语义同创建 */
+  filter?: unknown
 }
 
 function parseHeadersJson(input: unknown): string | null {
@@ -93,13 +99,21 @@ hooks.post('/subscriptions', requireUser, async (c) => {
         : String(secretRaw)
   const headersJson = parseHeadersJson(body.headers)
 
+  let filterJson: string | null = null
+  if (event === 'email:new' && body.filter !== undefined) {
+    const owned = listEmailsOfUser(user.id)
+    const parsed = parseEmailFilterInput(body.filter, owned)
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+    filterJson = parsed.filterJson
+  }
+
   const created = createSubscription({
     ownerUserId: user.id,
     event,
     targetUrl,
     secret,
     headersJson,
-    filterJson: null,
+    filterJson,
   })
   return c.json({ ok: true, item: created }, 201)
 })
@@ -110,11 +124,15 @@ hooks.patch('/subscriptions/:id', requireUser, async (c) => {
   const body = (await c.req.json().catch(() => null)) as PatchBody | null
   if (!body) return c.json({ error: 'invalid body' }, 400)
 
+  const existing = getSubscriptionOwnedBy(id, user.id)
+  if (!existing) return c.json({ error: 'Not Found' }, 404)
+
   const patch: {
     targetUrl?: string
     secret?: string | null
     active?: boolean
     headersJson?: string | null
+    filterJson?: string | null
   } = {}
 
   if (body.target_url !== undefined) {
@@ -137,6 +155,15 @@ hooks.patch('/subscriptions/:id', requireUser, async (c) => {
       return c.json({ error: 'invalid headers' }, 400)
     }
     patch.headersJson = headersJson
+  }
+  if (body.filter !== undefined) {
+    if (existing.event !== 'email:new') {
+      return c.json({ error: 'filter only applies to email:new' }, 400)
+    }
+    const owned = listEmailsOfUser(user.id)
+    const parsed = parseEmailFilterInput(body.filter, owned)
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+    patch.filterJson = parsed.filterJson
   }
 
   const updated = updateSubscriptionOwnedBy(id, user.id, patch)
@@ -168,7 +195,11 @@ hooks.post('/subscriptions/:id/test', requireUser, (c) => {
   const sub = getSubscriptionOwnedBy(id, user.id)
   if (!sub) return c.json({ error: 'Not Found' }, 404)
 
-  const payload = buildTestPayload(sub.event, user)
+  const owned = listEmailsOfUser(user.id)
+  const payload = buildTestPayload(sub.event, user, {
+    filterJson: sub.filter_json,
+    ownedAddresses: owned,
+  })
   emitHook(sub.event, payload)
   return c.json({ ok: true, queued: true, event: sub.event })
 })

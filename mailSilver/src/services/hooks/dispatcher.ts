@@ -8,6 +8,10 @@ import { onHook } from './bus.js'
 import { listActiveSubscriptionsByEvent } from './subscriptionRepo.js'
 import type { HookEventMap, HookEventName } from './registry.js'
 import { HOOK_EVENTS } from './registry.js'
+import {
+  matchesEmailNewSubscription,
+  shouldDeliverGlobalEvent,
+} from './filter.js'
 import { buildHookHeaders, type HookPayloadEnvelope } from './signer.js'
 
 const RETRY_DELAYS_MS = [1_000, 5_000, 30_000, 120_000, 600_000] as const
@@ -147,15 +151,48 @@ async function deliverWithRetry<E extends HookEventName>(input: {
   }, delayMs)
 }
 
+/**
+ * 按事件类型与订阅归属/过滤规则判断是否应投递。
+ * `email:new` 仅用户订阅且收件地址命中；全局事件仅系统订阅。
+ */
+function shouldDeliver<E extends HookEventName>(
+  event: E,
+  sub: { owner_user_id: string | null; filter_json: string | null },
+  data: HookEventMap[E],
+): boolean {
+  if (event === 'email:new') {
+    if (!sub.owner_user_id) return false
+    const addrs = (data as HookEventMap['email:new']).addresses
+    return matchesEmailNewSubscription(sub, addrs).length > 0
+  }
+  return shouldDeliverGlobalEvent(sub)
+}
+
+/**
+ * 按订阅过滤构造出站载荷；`email:new` 的 `addresses` 仅保留该订阅命中的地址。
+ */
+function dataForSubscription<E extends HookEventName>(
+  event: E,
+  sub: { owner_user_id: string | null; filter_json: string | null },
+  data: HookEventMap[E],
+): HookEventMap[E] {
+  if (event !== 'email:new' || !sub.owner_user_id) return data
+  const raw = data as HookEventMap['email:new']
+  const matched = matchesEmailNewSubscription(sub, raw.addresses)
+  return { ...raw, addresses: matched } as HookEventMap[E]
+}
+
 function registerEvent<E extends HookEventName>(event: E): void {
   onHook(event, (envelope) => {
     const subs = listActiveSubscriptionsByEvent(event)
     for (const sub of subs) {
+      if (!shouldDeliver(event, sub, envelope.data)) continue
+      const data = dataForSubscription(event, sub, envelope.data)
       const payload: HookPayloadEnvelope & { data: HookEventMap[E] } = {
         event,
         delivery_id: randomUUID(),
         occurred_at: envelope.occurredAt,
-        data: envelope.data,
+        data,
       }
       void deliverWithRetry({
         subscription: {

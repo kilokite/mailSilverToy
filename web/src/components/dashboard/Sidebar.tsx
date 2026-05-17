@@ -292,7 +292,7 @@ export function Sidebar({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>添加邮箱</DialogTitle>
-            <DialogDescription>后缀来自服务器配置的 MAIL_DOMAINS。</DialogDescription>
+            {/* <DialogDescription>后缀来自服务器配置的 MAIL_DOMAINS。</DialogDescription> */}
           </DialogHeader>
           <DialogBody className="space-y-3">
             <div>

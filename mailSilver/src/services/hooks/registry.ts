@@ -1,3 +1,5 @@
+import { getWatchAddresses } from './filter.js'
+
 export interface HookEventMap {
   'email:new': {
     addresses: string[]
@@ -36,17 +38,27 @@ export function isHookEventName(input: string): input is HookEventName {
   return EVENT_SET.has(input as HookEventName)
 }
 
+/**
+ * 构造 Webhook 测试投递的示例载荷。
+ * @param options.filterJson - 订阅的 `filter_json`，用于 `email:new` 选取示例地址
+ * @param options.ownedAddresses - 用户拥有的邮箱；与 filter 共同决定 `email:new` 的 `addresses`
+ */
 export function buildTestPayload(
   event: HookEventName,
   user: { id: string; username: string },
+  options?: { filterJson?: string | null; ownedAddresses?: string[] },
 ): HookEventMap[HookEventName] {
   switch (event) {
-    case 'email:new':
+    case 'email:new': {
+      const owned = options?.ownedAddresses ?? []
+      const watch = owned.length > 0 ? getWatchAddresses(user.id, options?.filterJson ?? null) : []
+      const sample = watch[0] ?? owned[0] ?? `${user.username}@example.test`
       return {
-        addresses: [],
+        addresses: [sample],
         emailId: `test-${user.id}`,
         subject: `[TEST] webhook for ${user.username}`,
       }
+    }
     case 'user:registered':
       return {
         userId: user.id,
