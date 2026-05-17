@@ -15,12 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { rawEmailUrl, type EmailDetail } from "@/lib/api"
 import { EmailMetaDialog } from "@/components/dashboard/EmailMetaDialog"
-
-function initials(name: string | null | undefined) {
-  const s = (name ?? "").trim()
-  if (!s) return "?"
-  return s.slice(0, 1).toUpperCase()
-}
+import { EmailAvatar } from "@/components/dashboard/EmailAvatar"
 
 function formatDateTime(iso: string | null | undefined) {
   if (!iso) return ""
@@ -176,9 +171,7 @@ export function MailView({
       <Separator />
 
       <div className="flex items-start gap-4 p-6">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium">
-          {initials(fromName || fromAddr)}
-        </div>
+        <EmailAvatar email={fromAddr} name={fromName || fromAddr} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="font-medium">{fromName || fromAddr || "(未知发件人)"}</span>

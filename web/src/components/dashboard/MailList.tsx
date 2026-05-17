@@ -4,12 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import type { EmailListItem } from "@/lib/api"
-
-function initials(name: string | null | undefined, fallback = "?") {
-  const s = (name ?? "").trim()
-  if (!s) return fallback
-  return s.slice(0, 1).toUpperCase()
-}
+import { EmailAvatar } from "@/components/dashboard/EmailAvatar"
 
 function displayFrom(m: EmailListItem) {
   return m.from_name?.trim() || m.from_addr?.trim() || "(未知发件人)"
@@ -156,9 +151,8 @@ export function MailList({
                 isSent ? null : fastDeliveryDelta(m.date, m.received_at)
               const primaryLabel = isSent ? displayTo(m) : displayFrom(m)
               const secondaryAddr = isSent ? m.to_addr : m.from_addr
-              const avatarSeed = isSent
-                ? m.to_addr || primaryLabel
-                : m.from_name || m.from_addr
+              const avatarEmail = isSent ? m.to_addr : m.from_addr
+              const avatarName = isSent ? displayTo(m) : displayFrom(m)
               return (
                 <li
                   key={m.id}
@@ -189,9 +183,12 @@ export function MailList({
                     onClick={() => onSelect(m.id)}
                     className="flex min-w-0 flex-1 items-start gap-3 text-left"
                   >
-                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-                      {initials(avatarSeed)}
-                    </div>
+                    <EmailAvatar
+                      className="mt-0.5"
+                      email={avatarEmail}
+                      name={avatarName}
+                      size="sm"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium text-foreground">
