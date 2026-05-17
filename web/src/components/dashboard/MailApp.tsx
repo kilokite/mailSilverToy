@@ -17,6 +17,7 @@ import {
   type MailboxFilter,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { ensureMailNotifyPermission, notifyNewMail } from "@/lib/mailNotify"
 
 const folderLabels: Record<Exclude<Folder, "hooks" | "compose">, string> = {
   inbox: "收件箱",
@@ -81,6 +82,7 @@ export function MailApp({ user }: { user: AuthUser }) {
   const detailCache = useRef<Map<string, EmailDetail>>(new Map())
   const detailReqId = useRef(0)
   const debouncedQueryRef = useRef(debouncedQuery)
+  const notifiedMailIds = useRef(new Set<string>())
 
   useEffect(() => {
     debouncedQueryRef.current = debouncedQuery
@@ -269,25 +271,33 @@ export function MailApp({ user }: { user: AuthUser }) {
   }, [user])
 
   useEffect(() => {
+    void ensureMailNotifyPermission()
+  }, [])
+
+  useEffect(() => {
     setLiveStatus("connecting")
     const es = openMailStream({
       onReady: () => setLiveStatus("live"),
       onError: () => setLiveStatus("offline"),
       onMail: (item, addresses) => {
-        if (folder !== "inbox") return
         if (
           mailboxFilter !== "all" &&
           !addresses.map((a) => a.toLowerCase()).includes(mailboxFilter.toLowerCase())
         ) {
           return
         }
-        const kw = debouncedQueryRef.current.trim()
-        if (kw && !matchesListItemSearch(item, kw)) return
         const row: EmailListItem = {
           ...item,
           starred: item.starred ?? false,
           trashed: item.trashed ?? false,
         }
+        if (!notifiedMailIds.current.has(row.id)) {
+          notifiedMailIds.current.add(row.id)
+          notifyNewMail(row)
+        }
+        if (folder !== "inbox") return
+        const kw = debouncedQueryRef.current.trim()
+        if (kw && !matchesListItemSearch(item, kw)) return
         setItems((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev
           return [row, ...prev]

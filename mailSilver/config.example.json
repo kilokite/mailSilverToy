@@ -15,7 +15,7 @@
     ]
   },
   "auth": {
-    "sessionTtlMs": 2592000000,
+    "sessionTtlMs": 25920000000,
     "cookieSecure": false,
     "cookieName": "mail_session",
     "adminUsername": ["admin"]
