@@ -29,6 +29,14 @@ export type ListEmailParams = {
   userId?: string | null
   /** 仅返回发往该完整地址的邮件（须属于该用户） */
   recipientAddress?: string | null
+  /** 模糊搜索：主题、发件人、正文、收件人地址 */
+  q?: string | null
+}
+
+const MAX_SEARCH_Q_LEN = 128
+
+function escapeLikePattern(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
 export function listEmails(params: ListEmailParams): EmailListItem[] {
@@ -36,6 +44,8 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
   const before = params.before?.trim() || null
   const userId = params.userId?.trim() || null
   const recipientAddress = params.recipientAddress?.trim().toLowerCase() || null
+  const qRaw = params.q?.trim().slice(0, MAX_SEARCH_Q_LEN) || null
+  const q = qRaw ? qRaw.toLowerCase() : null
 
   const where: string[] = []
   const args: unknown[] = []
@@ -51,6 +61,23 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
     )
     args.push(userId)
     if (recipientAddress) args.push(recipientAddress)
+  }
+  if (q) {
+    const pattern = `%${escapeLikePattern(q)}%`
+    where.push(
+      `(
+        LOWER(p.subject) LIKE ? ESCAPE '\\' OR
+        LOWER(p.from_addr) LIKE ? ESCAPE '\\' OR
+        LOWER(p.from_name) LIKE ? ESCAPE '\\' OR
+        LOWER(p.text) LIKE ? ESCAPE '\\' OR
+        EXISTS (
+          SELECT 1 FROM email_recipients r2
+           WHERE r2.email_id = e.id
+             AND LOWER(r2.address) LIKE ? ESCAPE '\\'
+        )
+      )`,
+    )
+    for (let i = 0; i < 5; i++) args.push(pattern)
   }
   if (before) {
     where.push(`e.received_at < ?`)

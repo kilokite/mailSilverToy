@@ -9,7 +9,16 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogBody,
@@ -19,6 +28,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import {
   ApiError,
@@ -62,10 +81,25 @@ const statusLabels: Record<HookDelivery["status"], string> = {
   failed: "失败",
 }
 
-function statusClass(status: HookDelivery["status"]) {
-  if (status === "success") return "bg-emerald-500/15 text-emerald-700"
-  if (status === "failed") return "bg-destructive/15 text-destructive"
-  return "bg-amber-500/15 text-amber-700"
+function deliveryStatusBadge(status: HookDelivery["status"]) {
+  if (status === "success") {
+    return (
+      <Badge
+        variant="secondary"
+        className="border-transparent bg-emerald-500/15 text-emerald-700"
+      >
+        {statusLabels[status]}
+      </Badge>
+    )
+  }
+  if (status === "failed") {
+    return <Badge variant="destructive">{statusLabels[status]}</Badge>
+  }
+  return (
+    <Badge variant="outline" className="border-amber-500/30 bg-amber-500/15 text-amber-700">
+      {statusLabels[status]}
+    </Badge>
+  )
 }
 
 /** 从订阅 `filter_json` 解析指定监听地址；`null` 表示监听全部邮箱 */
@@ -168,6 +202,15 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
       setFormError("请填写事件类型与目标 URL")
       return
     }
+    if (
+      !isAdminMode &&
+      createEvent === "email:new" &&
+      !createWatchAll &&
+      createFilterAddresses.length === 0
+    ) {
+      setFormError("请至少选择一个监听邮箱，或选择监听全部")
+      return
+    }
     setCreateSubmitting(true)
     try {
       const createFn = isAdminMode ? createAdminHookSubscription : createHookSubscription
@@ -175,15 +218,6 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
         !isAdminMode && createEvent === "email:new" && !createWatchAll
           ? { addresses: createFilterAddresses }
           : undefined
-      if (
-        !isAdminMode &&
-        createEvent === "email:new" &&
-        !createWatchAll &&
-        createFilterAddresses.length === 0
-      ) {
-        setFormError("请至少选择一个监听邮箱，或选择监听全部")
-        return
-      }
       await createFn({
         event: createEvent,
         target_url,
@@ -295,9 +329,9 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {formError && !createOpen ? (
-          <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {formError}
-          </p>
+          <Card className="mb-3 gap-2 border-destructive/30 bg-destructive/5 py-3 shadow-none">
+            <CardContent className="px-3 py-0 text-sm text-destructive">{formError}</CardContent>
+          </Card>
         ) : null}
 
         {loading ? (
@@ -306,23 +340,26 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
             加载中…
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
-            <AlertTriangle className="h-8 w-8 text-destructive" />
-            <p className="text-sm text-destructive">{error}</p>
-            <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
-              重试
-            </Button>
-          </div>
+          <Card className="border-destructive/30 bg-destructive/5 py-8 shadow-none">
+            <CardContent className="flex flex-col items-center gap-3 text-center">
+              <AlertTriangle className="h-8 w-8 text-destructive" />
+              <p className="text-sm text-destructive">{error}</p>
+              <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
+                重试
+              </Button>
+            </CardContent>
+          </Card>
         ) : items.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-10 text-center">
+          <Card className="border-dashed py-10 shadow-none">
+            <CardContent className="text-center">
             <p className="text-sm text-muted-foreground">还没有 Webhook 订阅</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              例如将{" "}
-              <span className="font-mono">
-                {isAdminMode ? "user:registered" : "email:new"}
-              </span>{" "}
-              推送到 Discord 或自建服务
-            </p>
+              <CardDescription className="mt-1">
+                例如将{" "}
+                <span className="font-mono text-foreground/80">
+                  {isAdminMode ? "user:registered" : "email:new"}
+                </span>{" "}
+                推送到 Discord 或自建服务
+              </CardDescription>
             <Button
               type="button"
               size="sm"
@@ -335,23 +372,24 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
             >
               <Plus className="h-3.5 w-3.5" />
               创建第一个订阅
-            </Button>
-          </div>
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <div className="space-y-3">
             {items.map((sub) => {
               const expanded = expandedId === sub.id
               const busy = actionId === sub.id
               const rows = deliveries[sub.id] ?? []
+              const filterAddrs = parseFilterAddresses(sub.filter_json)
               return (
-                <article
-                  key={sub.id}
-                  className="overflow-hidden rounded-lg border bg-card text-card-foreground"
-                >
-                  <div className="flex flex-wrap items-start gap-3 p-4">
-                    <button
+                <Card key={sub.id} className="gap-0 overflow-hidden py-0 shadow-sm">
+                  <CardContent className="flex flex-wrap items-start gap-3 p-4">
+                    <Button
                       type="button"
-                      className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="mt-0.5 shrink-0 text-muted-foreground"
                       onClick={() => void toggleExpand(sub.id)}
                       aria-expanded={expanded}
                     >
@@ -360,40 +398,49 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                       ) : (
                         <ChevronRight className="h-4 w-4" />
                       )}
-                    </button>
+                    </Button>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs font-medium">{sub.event}</span>
-                        <span
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {sub.event}
+                        </Badge>
+                        <Badge
+                          variant="secondary"
                           className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            "text-[10px]",
                             sub.active
-                              ? "bg-emerald-500/15 text-emerald-700"
-                              : "bg-muted text-muted-foreground",
+                              ? "border-transparent bg-emerald-500/15 text-emerald-700"
+                              : "text-muted-foreground",
                           )}
                         >
                           {sub.active ? "已启用" : "已停用"}
-                        </span>
+                        </Badge>
                         {sub.secret ? (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
                             已配置签名密钥
-                          </span>
+                          </Badge>
                         ) : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{eventLabel(sub.event)}</p>
                       {sub.event === "email:new" && !isAdminMode ? (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          监听：
-                          <span className="font-mono text-foreground/80">
-                            {formatFilterLabel(sub.filter_json)}
-                          </span>
-                          {parseFilterAddresses(sub.filter_json) ? (
-                            <span className="ml-1 text-muted-foreground">
-                              (
-                              {parseFilterAddresses(sub.filter_json)!.join(", ")})
-                            </span>
-                          ) : null}
-                        </p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-muted-foreground">监听</span>
+                          {filterAddrs ? (
+                            filterAddrs.map((addr) => (
+                              <Badge
+                                key={addr}
+                                variant="secondary"
+                                className="font-mono text-[10px] font-normal"
+                              >
+                                {addr}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px] font-normal">
+                              {formatFilterLabel(sub.filter_json)}
+                            </Badge>
+                          )}
+                        </div>
                       ) : null}
                       <p
                         className="mt-2 break-all font-mono text-xs text-foreground"
@@ -442,10 +489,12 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  </div>
+                  </CardContent>
 
                   {expanded ? (
-                    <div className="border-t bg-muted/30 px-4 py-3">
+                    <>
+                      <Separator />
+                      <CardContent className="bg-muted/30 py-3">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-xs font-medium text-muted-foreground">最近投递</p>
                         <Button
@@ -490,14 +539,7 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                                     {formatIso(d.created_at)}
                                   </td>
                                   <td className="py-2 pr-3">
-                                    <span
-                                      className={cn(
-                                        "inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
-                                        statusClass(d.status),
-                                      )}
-                                    >
-                                      {statusLabels[d.status]}
-                                    </span>
+                                    {deliveryStatusBadge(d.status)}
                                   </td>
                                   <td className="py-2 pr-3 font-mono">{d.attempt}</td>
                                   <td className="py-2 pr-3 font-mono">
@@ -512,9 +554,10 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                           </table>
                         </div>
                       )}
-                    </div>
+                      </CardContent>
+                    </>
                   ) : null}
-                </article>
+                </Card>
               )
             })}
           </div>
@@ -529,68 +572,85 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
               目标 URL 需可公网访问；可选密钥用于校验 X-Hook-Signature 头。
             </DialogDescription>
           </DialogHeader>
-          <DialogBody className="space-y-3">
-            <div>
-              <label className="text-xs text-muted-foreground">事件类型</label>
-              <select
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="hook-event" className="text-xs font-normal text-muted-foreground">
+                事件类型
+              </Label>
+              <Select
                 value={createEvent || events[0]?.name || ""}
-                onChange={(e) => setCreateEvent(e.target.value)}
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-[3px] focus:ring-ring/50"
+                onValueChange={setCreateEvent}
               >
-                {events.map((ev) => (
-                  <option key={ev.name} value={ev.name}>
-                    {ev.name} — {ev.description}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="hook-event" className="w-full">
+                  <SelectValue placeholder="选择事件" />
+                </SelectTrigger>
+                <SelectContent>
+                  {events.map((ev) => (
+                    <SelectItem key={ev.name} value={ev.name}>
+                      {ev.name} — {ev.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">目标 URL</label>
+            <div className="space-y-2">
+              <Label htmlFor="hook-url" className="text-xs font-normal text-muted-foreground">
+                目标 URL
+              </Label>
               <Input
+                id="hook-url"
                 value={createUrl}
                 onChange={(e) => setCreateUrl(e.target.value)}
                 placeholder="https://example.com/webhook"
-                className="mt-1 font-mono text-xs"
+                className="font-mono text-xs"
               />
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">签名密钥（可选）</label>
+            <div className="space-y-2">
+              <Label htmlFor="hook-secret" className="text-xs font-normal text-muted-foreground">
+                签名密钥（可选）
+              </Label>
               <Input
+                id="hook-secret"
                 value={createSecret}
                 onChange={(e) => setCreateSecret(e.target.value)}
                 placeholder="留空则不发送签名头"
-                className="mt-1 font-mono text-xs"
+                className="font-mono text-xs"
                 type="password"
                 autoComplete="off"
               />
             </div>
             {!isAdminMode && isEmailNewEvent ? (
-              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-                <p className="text-xs font-medium text-muted-foreground">监听邮箱</p>
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="watch-scope"
-                    checked={createWatchAll}
-                    onChange={() => setCreateWatchAll(true)}
-                  />
-                  全部收件邮箱
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="watch-scope"
-                    checked={!createWatchAll}
-                    onChange={() => {
-                      setCreateWatchAll(false)
-                      if (createFilterAddresses.length === 0 && myEmails.length > 0) {
+              <Card className="gap-3 py-3 shadow-none">
+                <CardHeader className="px-3 pb-0">
+                  <CardTitle className="text-xs font-medium text-muted-foreground">
+                    监听邮箱
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 px-3">
+                  <RadioGroup
+                    value={createWatchAll ? "all" : "selected"}
+                    onValueChange={(v) => {
+                      const all = v === "all"
+                      setCreateWatchAll(all)
+                      if (!all && createFilterAddresses.length === 0 && myEmails.length > 0) {
                         setCreateFilterAddresses([myEmails[0]])
                       }
                     }}
-                  />
-                  仅指定邮箱
-                </label>
-                {!createWatchAll ? (
+                  >
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="all" id="watch-all" />
+                      <Label htmlFor="watch-all" className="font-normal">
+                        全部收件邮箱
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="selected" id="watch-selected" />
+                      <Label htmlFor="watch-selected" className="font-normal">
+                        仅指定邮箱
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  {!createWatchAll ? (
                   <div className="ml-1 max-h-36 space-y-1.5 overflow-y-auto border-l pl-3">
                     {myEmails.length === 0 ? (
                       <p className="text-xs text-muted-foreground">暂无邮箱，请先在侧栏添加</p>
@@ -598,29 +658,32 @@ export function HooksPage({ mode = "user" }: { mode?: "user" | "admin" }) {
                       myEmails.map((addr) => {
                         const checked = createFilterAddresses.includes(addr)
                         return (
-                          <label
-                            key={addr}
-                            className="flex cursor-pointer items-center gap-2 font-mono text-xs"
-                          >
-                            <input
-                              type="checkbox"
+                          <div key={addr} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`watch-${addr}`}
                               checked={checked}
-                              onChange={() => {
+                              onCheckedChange={(v) => {
                                 setCreateFilterAddresses((prev) =>
-                                  checked
-                                    ? prev.filter((a) => a !== addr)
-                                    : [...prev, addr],
+                                  v === true
+                                    ? [...prev, addr]
+                                    : prev.filter((a) => a !== addr),
                                 )
                               }}
                             />
-                            {addr}
-                          </label>
+                            <Label
+                              htmlFor={`watch-${addr}`}
+                              className="font-mono text-xs font-normal"
+                            >
+                              {addr}
+                            </Label>
+                          </div>
                         )
                       })
                     )}
                   </div>
                 ) : null}
-              </div>
+                </CardContent>
+              </Card>
             ) : null}
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
             <div className="flex justify-end gap-2">

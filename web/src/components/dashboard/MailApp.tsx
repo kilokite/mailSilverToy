@@ -23,7 +23,18 @@ const folderLabels: Record<Exclude<Folder, "hooks">, string> = {
   trash: "回收站",
 }
 
+const PAGE_SIZE = 50
+const SEARCH_DEBOUNCE_MS = 300
+
 type LiveStatus = "connecting" | "live" | "offline"
+
+function matchesListItemSearch(item: EmailListItem, kw: string): boolean {
+  const lower = kw.toLowerCase()
+  const from = (item.from_name?.trim() || item.from_addr?.trim() || "").toLowerCase()
+  const subject = (item.subject?.trim() || "").toLowerCase()
+  const addr = (item.from_addr ?? "").toLowerCase()
+  return from.includes(lower) || subject.includes(lower) || addr.includes(lower)
+}
 
 export function MailApp({ user }: { user: AuthUser }) {
   const { logout, refresh } = useAuth()
@@ -35,6 +46,11 @@ export function MailApp({ user }: { user: AuthUser }) {
   const [items, setItems] = useState<EmailListItem[]>([])
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<EmailDetail | null>(null)
@@ -45,12 +61,33 @@ export function MailApp({ user }: { user: AuthUser }) {
 
   const detailCache = useRef<Map<string, EmailDetail>>(new Map())
   const detailReqId = useRef(0)
+  const debouncedQueryRef = useRef(debouncedQuery)
+
+  useEffect(() => {
+    debouncedQueryRef.current = debouncedQuery
+  }, [debouncedQuery])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query), SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(t)
+  }, [query])
+
+  const listFetchParams = useCallback(
+    () => ({
+      limit: PAGE_SIZE,
+      address: mailboxFilter,
+      q: debouncedQuery.trim() || undefined,
+    }),
+    [mailboxFilter, debouncedQuery],
+  )
 
   const refreshList = useCallback(async () => {
     if (folder !== "inbox") {
       setItems([])
       setListError(null)
       setListLoading(false)
+      setHasMore(false)
+      setLoadingMore(false)
       setSelectedId(null)
       setDetail(null)
       return
@@ -58,18 +95,47 @@ export function MailApp({ user }: { user: AuthUser }) {
     setListLoading(true)
     setListError(null)
     try {
-      const { items: rows } = await listEmails({
-        limit: 50,
-        address: mailboxFilter,
-      })
+      const { items: rows } = await listEmails(listFetchParams())
       setItems(rows)
-      setSelectedId((prev) => prev ?? rows[0]?.id ?? null)
+      setHasMore(rows.length === PAGE_SIZE)
+      setSelectedId((prev) => {
+        if (prev && rows.some((r) => r.id === prev)) return prev
+        return rows[0]?.id ?? null
+      })
     } catch (e) {
       setListError(e instanceof Error ? e.message : String(e))
+      setHasMore(false)
     } finally {
       setListLoading(false)
     }
-  }, [folder, mailboxFilter])
+  }, [folder, listFetchParams])
+
+  const loadMore = useCallback(async () => {
+    if (folder !== "inbox" || listLoading || loadingMore || !hasMore) return
+    const last = items[items.length - 1]
+    if (!last) return
+    setLoadingMore(true)
+    setListError(null)
+    try {
+      const { items: rows } = await listEmails({
+        ...listFetchParams(),
+        before: last.received_at,
+      })
+      setItems((prev) => {
+        const seen = new Set(prev.map((m) => m.id))
+        const merged = [...prev]
+        for (const row of rows) {
+          if (!seen.has(row.id)) merged.push(row)
+        }
+        return merged
+      })
+      setHasMore(rows.length === PAGE_SIZE)
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [folder, hasMore, items, listFetchParams, listLoading, loadingMore])
 
   useEffect(() => {
     void refreshList()
@@ -124,6 +190,8 @@ export function MailApp({ user }: { user: AuthUser }) {
         ) {
           return
         }
+        const kw = debouncedQueryRef.current.trim()
+        if (kw && !matchesListItemSearch(item, kw)) return
         setItems((prev) => {
           if (prev.some((m) => m.id === item.id)) return prev
           return [item, ...prev]
@@ -181,6 +249,11 @@ export function MailApp({ user }: { user: AuthUser }) {
             loading={listLoading}
             error={listError}
             onRetry={() => void refreshList()}
+            query={query}
+            onQueryChange={setQuery}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            onLoadMore={() => void loadMore()}
           />
           <MailView mail={detail} loading={detailLoading} error={detailError} />
         </>

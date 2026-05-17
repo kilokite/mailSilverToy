@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useRef } from "react"
 import { Search, AlertTriangle, Clock, Zap } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -56,6 +56,11 @@ export function MailList({
   loading,
   error,
   onRetry,
+  query,
+  onQueryChange,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   mails: EmailListItem[]
   selectedId: string | null
@@ -64,20 +69,31 @@ export function MailList({
   loading?: boolean
   error?: string | null
   onRetry?: () => void
+  query: string
+  onQueryChange: (value: string) => void
+  hasMore: boolean
+  loadingMore: boolean
+  onLoadMore: () => void
 }) {
-  const [q, setQ] = useState("")
+  const sentinelRef = useRef<HTMLLIElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
 
-  const filtered = useMemo(() => {
-    const kw = q.trim().toLowerCase()
-    if (!kw) return mails
-    return mails.filter((m) => {
-      return (
-        displayFrom(m).toLowerCase().includes(kw) ||
-        displaySubject(m).toLowerCase().includes(kw) ||
-        (m.from_addr ?? "").toLowerCase().includes(kw)
-      )
-    })
-  }, [mails, q])
+  useEffect(() => {
+    const root = listRef.current
+    const sentinel = sentinelRef.current
+    if (!root || !sentinel || !hasMore || loading || loadingMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onLoadMore()
+      },
+      { root, rootMargin: "120px", threshold: 0 },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadingMore, onLoadMore, mails.length])
+
+  const searching = query.trim().length > 0
 
   return (
     <section className="flex w-full max-w-md shrink-0 flex-col border-r md:w-[380px]">
@@ -93,15 +109,15 @@ export function MailList({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
             placeholder="搜索邮件…"
             className="pl-8"
           />
         </div>
       </div>
       <Separator />
-      <ul className="flex-1 overflow-y-auto">
+      <ul ref={listRef} className="flex-1 overflow-y-auto">
         {error ? (
           <li className="p-8 text-center text-sm text-destructive">
             <AlertTriangle className="mx-auto mb-2 h-5 w-5" />
@@ -117,68 +133,77 @@ export function MailList({
           </li>
         ) : loading && mails.length === 0 ? (
           <li className="p-8 text-center text-sm text-muted-foreground">加载中…</li>
-        ) : filtered.length === 0 ? (
+        ) : mails.length === 0 ? (
           <li className="p-8 text-center text-sm text-muted-foreground">
-            {q ? "没有匹配的邮件" : "暂无邮件"}
+            {searching ? "没有匹配的邮件" : "暂无邮件"}
           </li>
         ) : (
-          filtered.map((m) => {
-            const active = m.id === selectedId
-            const isError = m.parse_status === "error"
-            const isPending = m.parse_status === "pending"
-            const fastDelta = fastDeliveryDelta(m.date, m.received_at)
-            return (
-              <li key={m.id}>
-                <button
-                  onClick={() => onSelect(m.id)}
-                  className={cn(
-                    "flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors",
-                    active ? "bg-accent" : "hover:bg-accent/50",
-                  )}
-                >
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-                    {initials(m.from_name || m.from_addr)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {displayFrom(m)}
-                      </span>
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        {formatTime(m.received_at)}
-                      </span>
+          <>
+            {mails.map((m) => {
+              const active = m.id === selectedId
+              const isError = m.parse_status === "error"
+              const isPending = m.parse_status === "pending"
+              const fastDelta = fastDeliveryDelta(m.date, m.received_at)
+              return (
+                <li key={m.id}>
+                  <button
+                    onClick={() => onSelect(m.id)}
+                    className={cn(
+                      "flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors",
+                      active ? "bg-accent" : "hover:bg-accent/50",
+                    )}
+                  >
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+                      {initials(m.from_name || m.from_addr)}
                     </div>
-                    <p className="mt-0.5 truncate text-sm text-foreground/80">
-                      {displaySubject(m)}
-                    </p>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      {m.from_addr ? (
-                        <span className="truncate">{m.from_addr}</span>
-                      ) : null}
-                      {isError ? (
-                        <span className="ml-auto inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                          <AlertTriangle className="h-3 w-3" />
-                          解析失败
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {displayFrom(m)}
                         </span>
-                      ) : null}
-                      {isPending ? (
-                        <span className="ml-auto inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                          <Clock className="h-3 w-3" />
-                          解析中
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                          {formatTime(m.received_at)}
                         </span>
-                      ) : null}
-                      {fastDelta != null ? (
-                        <span className="ml-auto inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
-                          <Zap className="h-3 w-3" />
-                          {formatDeltaSec(fastDelta)}
-                        </span>
-                      ) : null}
+                      </div>
+                      <p className="mt-0.5 truncate text-sm text-foreground/80">
+                        {displaySubject(m)}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        {m.from_addr ? (
+                          <span className="truncate">{m.from_addr}</span>
+                        ) : null}
+                        {isError ? (
+                          <span className="ml-auto inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                            <AlertTriangle className="h-3 w-3" />
+                            解析失败
+                          </span>
+                        ) : null}
+                        {isPending ? (
+                          <span className="ml-auto inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                            <Clock className="h-3 w-3" />
+                            解析中
+                          </span>
+                        ) : null}
+                        {fastDelta != null ? (
+                          <span className="ml-auto inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+                            <Zap className="h-3 w-3" />
+                            {formatDeltaSec(fastDelta)}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                </li>
+              )
+            })}
+            {hasMore || loadingMore ? (
+              <li ref={sentinelRef} className="p-4 text-center text-xs text-muted-foreground">
+                {loadingMore ? "加载更多…" : null}
               </li>
-            )
-          })
+            ) : mails.length > 0 ? (
+              <li className="p-4 text-center text-xs text-muted-foreground">没有更多了</li>
+            ) : null}
+          </>
         )}
       </ul>
     </section>

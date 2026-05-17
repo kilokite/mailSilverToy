@@ -140,11 +140,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export type MailboxFilter = "all" | (string & {})
 
 export function listEmails(
-  params: { limit?: number; before?: string; address?: MailboxFilter } = {},
+  params: {
+    limit?: number
+    before?: string
+    address?: MailboxFilter
+    q?: string
+  } = {},
 ) {
   const q = new URLSearchParams()
   if (params.limit) q.set("limit", String(params.limit))
   if (params.before) q.set("before", params.before)
+  const search = params.q?.trim()
+  if (search) q.set("q", search)
   if (params.address && params.address !== "all") {
     q.set("address", params.address)
   }

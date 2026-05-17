@@ -84,6 +84,8 @@ email.get('/', requireUser, (c) => {
   const limit = Number(c.req.query('limit') ?? 20)
   const before = c.req.query('before') ?? null
   const addressRaw = c.req.query('address')?.trim().toLowerCase() || null
+  const qRaw = c.req.query('q')?.trim() || null
+  const q = qRaw ? qRaw.slice(0, 128) : null
   const owned = listEmailsOfUser(user.id).map((x) => x.toLowerCase())
   if (addressRaw && !owned.includes(addressRaw)) {
     return c.json({ error: 'invalid address' }, 400)
@@ -93,6 +95,7 @@ email.get('/', requireUser, (c) => {
     before,
     userId: user.id,
     recipientAddress: addressRaw,
+    q,
   })
   return c.json({ items })
 })
