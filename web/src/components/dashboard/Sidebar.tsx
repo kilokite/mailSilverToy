@@ -36,7 +36,14 @@ import { addMyEmail, deleteMyEmail } from "@/lib/api"
 import type { MailboxFilter } from "@/lib/api"
 import logoUrl from "@/assets/logo.png"
 
-export type Folder = "inbox" | "sent" | "drafts" | "starred" | "trash" | "hooks"
+export type Folder =
+  | "inbox"
+  | "sent"
+  | "drafts"
+  | "starred"
+  | "trash"
+  | "compose"
+  | "hooks"
 
 const folders: { key: Folder; label: string; icon: React.ElementType }[] = [
   { key: "inbox", label: "收件箱", icon: Inbox },
@@ -64,7 +71,6 @@ export function Sidebar({
   onMailboxFilterChange,
   onLogout,
   onUserUpdated,
-  onCompose,
 }: {
   active: Folder
   onChange: (f: Folder) => void
@@ -75,7 +81,6 @@ export function Sidebar({
   onMailboxFilterChange: (filter: MailboxFilter) => void
   onLogout: () => void
   onUserUpdated: (emails: string[]) => void
-  onCompose: () => void
 }) {
   const { adminAccess, domains, refresh } = useAuth()
   const [copied, setCopied] = useState(false)
@@ -215,10 +220,13 @@ export function Sidebar({
           </div>
 
           <Button
-            className="w-full justify-start gap-2"
+            className={cn(
+              "w-full justify-start gap-2",
+              active === "compose" && "bg-primary text-primary-foreground hover:bg-primary/90",
+            )}
             size="sm"
             disabled={user.emails.length === 0}
-            onClick={onCompose}
+            onClick={() => onChange("compose")}
           >
             <PenSquare className="h-4 w-4" />
             写邮件

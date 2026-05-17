@@ -180,6 +180,22 @@ CREATE INDEX idx_email_trash_user ON email_trash(user_id, trashed_at DESC);
 `)
 }
 
+function migrateEmailSentTable(): void {
+  if (tableExists('email_sent')) return
+  const db = getDb()
+  db.exec(`
+CREATE TABLE email_sent (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email_id     TEXT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+  from_address TEXT NOT NULL,
+  sent_at      TEXT NOT NULL,
+  resend_id    TEXT,
+  PRIMARY KEY (user_id, email_id)
+);
+CREATE INDEX idx_email_sent_user ON email_sent(user_id, sent_at DESC);
+`)
+}
+
 export function runMigrations(): void {
   const db = getDb()
   if (hasLegacySchema()) {
@@ -190,4 +206,5 @@ export function runMigrations(): void {
   migrateMaxEmailsColumn()
   migrateEmailStarsTable()
   migrateEmailTrashTable()
+  migrateEmailSentTable()
 }

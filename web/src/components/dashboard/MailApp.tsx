@@ -4,7 +4,7 @@ import { Sidebar, type Folder } from "@/components/dashboard/Sidebar"
 import { HooksPage } from "@/components/dashboard/HooksPage"
 import { MailList } from "@/components/dashboard/MailList"
 import { MailView } from "@/components/dashboard/MailView"
-import { ComposeMailDialog } from "@/components/dashboard/ComposeMailDialog"
+import { ComposePage } from "@/components/dashboard/ComposePage"
 import {
   getEmail,
   listEmails,
@@ -18,7 +18,7 @@ import {
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 
-const folderLabels: Record<Exclude<Folder, "hooks">, string> = {
+const folderLabels: Record<Exclude<Folder, "hooks" | "compose">, string> = {
   inbox: "收件箱",
   starred: "星标",
   sent: "已发送",
@@ -31,8 +31,15 @@ const SEARCH_DEBOUNCE_MS = 300
 
 type LiveStatus = "connecting" | "live" | "offline"
 
-function isMailListFolder(folder: Folder): folder is "inbox" | "starred" | "trash" {
-  return folder === "inbox" || folder === "starred" || folder === "trash"
+function isMailListFolder(
+  folder: Folder,
+): folder is "inbox" | "starred" | "trash" | "sent" {
+  return (
+    folder === "inbox" ||
+    folder === "starred" ||
+    folder === "trash" ||
+    folder === "sent"
+  )
 }
 
 function matchesListItemSearch(item: EmailListItem, kw: string): boolean {
@@ -40,7 +47,13 @@ function matchesListItemSearch(item: EmailListItem, kw: string): boolean {
   const from = (item.from_name?.trim() || item.from_addr?.trim() || "").toLowerCase()
   const subject = (item.subject?.trim() || "").toLowerCase()
   const addr = (item.from_addr ?? "").toLowerCase()
-  return from.includes(lower) || subject.includes(lower) || addr.includes(lower)
+  const to = (item.to_addr ?? "").toLowerCase()
+  return (
+    from.includes(lower) ||
+    subject.includes(lower) ||
+    addr.includes(lower) ||
+    to.includes(lower)
+  )
 }
 
 export function MailApp({ user }: { user: AuthUser }) {
@@ -65,8 +78,6 @@ export function MailApp({ user }: { user: AuthUser }) {
   const [detailError, setDetailError] = useState<string | null>(null)
 
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("connecting")
-  const [composeOpen, setComposeOpen] = useState(false)
-
   const detailCache = useRef<Map<string, EmailDetail>>(new Map())
   const detailReqId = useRef(0)
   const debouncedQueryRef = useRef(debouncedQuery)
@@ -87,9 +98,17 @@ export function MailApp({ user }: { user: AuthUser }) {
       q: debouncedQuery.trim() || undefined,
       starred: folder === "starred" ? true : undefined,
       trashed: folder === "trash" ? true : undefined,
+      sent: folder === "sent" ? true : undefined,
     }),
     [folder, mailboxFilter, debouncedQuery],
   )
+
+  const handleMailSent = useCallback((id: string) => {
+    setFolder("sent")
+    setSelectedId(id)
+    setDetail(null)
+    detailCache.current.delete(id)
+  }, [])
 
   const refreshList = useCallback(async () => {
     if (!isMailListFolder(folder)) {
@@ -152,7 +171,7 @@ export function MailApp({ user }: { user: AuthUser }) {
       const prevItems = items
       const prevDetail = detail
       setItems((prev) => {
-        if (folder === "starred" && !starred) {
+        if ((folder === "starred" || folder === "sent") && !starred) {
           return prev.filter((m) => m.id !== id)
         }
         return prev.map((m) => (m.id === id ? { ...m, starred } : m))
@@ -179,7 +198,8 @@ export function MailApp({ user }: { user: AuthUser }) {
       const prevDetail = detail
       const removeFromList =
         (folder === "trash" && !trashed) ||
-        ((folder === "inbox" || folder === "starred") && trashed)
+        ((folder === "inbox" || folder === "starred" || folder === "sent") &&
+          trashed)
       setItems((prev) => {
         if (removeFromList) return prev.filter((m) => m.id !== id)
         return prev.map((m) => (m.id === id ? { ...m, trashed } : m))
@@ -212,7 +232,7 @@ export function MailApp({ user }: { user: AuthUser }) {
   }, [refreshList])
 
   useEffect(() => {
-    if (folder === "hooks" || !selectedId) {
+    if (folder === "hooks" || folder === "compose" || !selectedId) {
       setDetail(null)
       setDetailError(null)
       return
@@ -312,22 +332,23 @@ export function MailApp({ user }: { user: AuthUser }) {
             void navigate({ to: "/login", replace: true })
           })()
         }
-        onCompose={() => setComposeOpen(true)}
       />
-      <ComposeMailDialog
-        open={composeOpen}
-        onOpenChange={setComposeOpen}
-        user={localUser}
-        defaultFrom={
-          mailboxFilter !== "all" ? mailboxFilter : undefined
-        }
-      />
-      {folder === "hooks" ? (
+      {folder === "compose" ? (
+        <ComposePage
+          key={mailboxFilter}
+          user={localUser}
+          defaultFrom={
+            mailboxFilter !== "all" ? mailboxFilter : undefined
+          }
+          onSent={handleMailSent}
+        />
+      ) : folder === "hooks" ? (
         <HooksPage />
       ) : (
         <>
           <MailList
             title={folderLabels[folder]}
+            variant={folder === "sent" ? "sent" : "inbox"}
             mails={items}
             selectedId={selectedId}
             onSelect={setSelectedId}

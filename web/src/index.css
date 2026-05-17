@@ -121,3 +121,99 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* 写邮件：富文本 / Markdown 预览排版 */
+.prose-compose {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.prose-compose p {
+  margin: 0.5em 0;
+}
+
+.prose-compose p:first-child {
+  margin-top: 0;
+}
+
+.prose-compose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-compose h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 0.75em 0 0.35em;
+}
+
+.prose-compose h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.75em 0 0.35em;
+}
+
+.prose-compose h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.65em 0 0.3em;
+}
+
+.prose-compose ul,
+.prose-compose ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.prose-compose li {
+  margin: 0.2em 0;
+}
+
+.prose-compose blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.75em;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.prose-compose code {
+  font-size: 0.9em;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25rem;
+  background: var(--muted);
+}
+
+.prose-compose pre {
+  margin: 0.5em 0;
+  padding: 0.75em 1em;
+  border-radius: 0.375rem;
+  background: var(--muted);
+  overflow-x: auto;
+}
+
+.prose-compose pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.prose-compose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-compose img {
+  max-width: 100%;
+  height: auto;
+}
+
+.prose-compose .ProseMirror {
+  outline: none;
+}
+
+.prose-compose .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

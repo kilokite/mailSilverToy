@@ -12,6 +12,7 @@ import {
   getIdByBodySha256,
   getRawById,
   insertEmailTransaction,
+  insertOutboundEmail,
   listEmails,
   setEmailStarred,
   setEmailTrashed,
@@ -153,7 +154,19 @@ email.post('/send', requireUser, async (c) => {
     return c.json({ error: result.message, code: result.code }, status)
   }
 
-  return c.json({ ok: true, id: result.id })
+  const { id: localId } = insertOutboundEmail(user.id, {
+    from,
+    to,
+    cc,
+    bcc,
+    replyTo,
+    subject,
+    text,
+    html,
+    resendId: result.id,
+  })
+
+  return c.json({ ok: true, id: localId, resendId: result.id })
 })
 
 email.get('/', requireUser, (c) => {
@@ -169,6 +182,7 @@ email.get('/', requireUser, (c) => {
   }
   const starred = parseTruthyQuery(c.req.query('starred'))
   const trashed = parseTruthyQuery(c.req.query('trashed'))
+  const sent = parseTruthyQuery(c.req.query('sent'))
   const items = listEmails({
     limit: Number.isFinite(limit) ? limit : 20,
     before,
@@ -177,6 +191,7 @@ email.get('/', requireUser, (c) => {
     q,
     starred: starred || null,
     trashed: trashed || null,
+    sent: sent || null,
   })
   return c.json({ items })
 })

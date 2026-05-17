@@ -15,6 +15,10 @@ function displayFrom(m: EmailListItem) {
   return m.from_name?.trim() || m.from_addr?.trim() || "(未知发件人)"
 }
 
+function displayTo(m: EmailListItem) {
+  return m.to_addr?.trim() || "(无收件人)"
+}
+
 function displaySubject(m: EmailListItem) {
   return m.subject?.trim() || "(无主题)"
 }
@@ -53,6 +57,7 @@ export function MailList({
   selectedId,
   onSelect,
   title = "收件箱",
+  variant = "inbox",
   loading,
   error,
   onRetry,
@@ -67,6 +72,7 @@ export function MailList({
   selectedId: string | null
   onSelect: (id: string) => void
   title?: string
+  variant?: "inbox" | "sent"
   loading?: boolean
   error?: string | null
   onRetry?: () => void
@@ -77,6 +83,7 @@ export function MailList({
   onLoadMore: () => void
   onToggleStar?: (id: string, starred: boolean) => void
 }) {
+  const isSent = variant === "sent"
   const sentinelRef = useRef<HTMLLIElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
 
@@ -145,7 +152,13 @@ export function MailList({
               const active = m.id === selectedId
               const isError = m.parse_status === "error"
               const isPending = m.parse_status === "pending"
-              const fastDelta = fastDeliveryDelta(m.date, m.received_at)
+              const fastDelta =
+                isSent ? null : fastDeliveryDelta(m.date, m.received_at)
+              const primaryLabel = isSent ? displayTo(m) : displayFrom(m)
+              const secondaryAddr = isSent ? m.to_addr : m.from_addr
+              const avatarSeed = isSent
+                ? m.to_addr || primaryLabel
+                : m.from_name || m.from_addr
               return (
                 <li
                   key={m.id}
@@ -177,12 +190,12 @@ export function MailList({
                     className="flex min-w-0 flex-1 items-start gap-3 text-left"
                   >
                     <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-                      {initials(m.from_name || m.from_addr)}
+                      {initials(avatarSeed)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium text-foreground">
-                          {displayFrom(m)}
+                          {primaryLabel}
                         </span>
                         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                           {formatTime(m.received_at)}
@@ -192,8 +205,10 @@ export function MailList({
                         {displaySubject(m)}
                       </p>
                       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                        {m.from_addr ? (
-                          <span className="truncate">{m.from_addr}</span>
+                        {secondaryAddr ? (
+                          <span className="truncate">
+                            {isSent ? `发送至 ${secondaryAddr}` : secondaryAddr}
+                          </span>
                         ) : null}
                         {isError ? (
                           <span className="ml-auto inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { getDb } from '../db/sqlite.js'
 import { config, listEmailDomainSuffixes } from '../config.js'
 import type { ParsedEmailRow } from './emailParser.js'
@@ -20,6 +20,8 @@ export type EmailListItem = {
   from_addr: string | null
   from_name: string | null
   date: string | null
+  /** 已发送列表：首个收件人地址 */
+  to_addr?: string | null
   starred: boolean
   trashed: boolean
 }
@@ -37,6 +39,8 @@ export type ListEmailParams = {
   starred?: boolean | null
   /** true：仅回收站；默认排除回收站 */
   trashed?: boolean | null
+  /** true：仅已发送（发件人为用户绑定地址） */
+  sent?: boolean | null
 }
 
 const MAX_SEARCH_Q_LEN = 128
@@ -54,12 +58,14 @@ function rowToListItem(row: Record<string, unknown>): EmailListItem {
     from_addr: (row.from_addr as string | null) ?? null,
     from_name: (row.from_name as string | null) ?? null,
     date: (row.date as string | null) ?? null,
+    to_addr: (row.to_addr as string | null) ?? null,
     starred: !!(row.starred as number | boolean),
     trashed: !!(row.trashed as number | boolean),
   }
 }
 
-const LIST_SELECT = `e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date`
+const LIST_SELECT = `e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date,
+         json_extract(p.to_json, '$[0].address') AS to_addr`
 
 function listSelectWithUserState(): string {
   return `${LIST_SELECT},
@@ -79,23 +85,64 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
   const q = qRaw ? qRaw.toLowerCase() : null
   const starredOnly = params.starred === true
   const trashedOnly = params.trashed === true
+  const sentOnly = params.sent === true
 
   const where: string[] = []
   const args: unknown[] = []
   const joinArgs: unknown[] = []
   if (userId) {
     joinArgs.push(userId, userId)
-    where.push(
-      `EXISTS (
-        SELECT 1
-          FROM email_recipients r
-          JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
-         WHERE r.email_id = e.id AND ue.user_id = ?
-         ${recipientAddress ? 'AND r.address = ? COLLATE NOCASE' : ''}
-      )`,
-    )
-    args.push(userId)
-    if (recipientAddress) args.push(recipientAddress)
+    if (sentOnly) {
+      where.push(
+        `EXISTS (
+          SELECT 1 FROM email_sent es
+           WHERE es.email_id = e.id AND es.user_id = ?
+           ${recipientAddress ? 'AND es.from_address = ? COLLATE NOCASE' : ''}
+        )`,
+      )
+      args.push(userId)
+      if (recipientAddress) args.push(recipientAddress)
+    } else if (starredOnly) {
+      where.push(
+        `(
+          EXISTS (
+            SELECT 1
+              FROM email_recipients r
+              JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
+             WHERE r.email_id = e.id AND ue.user_id = ?
+             ${recipientAddress ? 'AND r.address = ? COLLATE NOCASE' : ''}
+          )
+          OR EXISTS (
+            SELECT 1 FROM email_sent es
+             WHERE es.email_id = e.id AND es.user_id = ?
+             ${recipientAddress ? 'AND es.from_address = ? COLLATE NOCASE' : ''}
+          )
+        )`,
+      )
+      args.push(userId)
+      if (recipientAddress) args.push(recipientAddress)
+      args.push(userId)
+      if (recipientAddress) args.push(recipientAddress)
+    } else {
+      where.push(
+        `EXISTS (
+          SELECT 1
+            FROM email_recipients r
+            JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
+           WHERE r.email_id = e.id AND ue.user_id = ?
+           ${recipientAddress ? 'AND r.address = ? COLLATE NOCASE' : ''}
+        )`,
+      )
+      args.push(userId)
+      if (recipientAddress) args.push(recipientAddress)
+      where.push(
+        `NOT EXISTS (
+          SELECT 1 FROM email_sent es
+           WHERE es.email_id = e.id AND es.user_id = ?
+        )`,
+      )
+      args.push(userId)
+    }
     if (trashedOnly) {
       where.push('t.email_id IS NOT NULL')
     } else {
@@ -291,7 +338,7 @@ export function getRawById(id: string): Buffer | null {
   return row?.raw ?? null
 }
 
-/** 判断邮件是否属于指定用户（按完整地址匹配） */
+/** 判断邮件是否属于指定用户（收件人或已发送） */
 export function emailBelongsToUser(
   emailId: string,
   userId: string,
@@ -299,13 +346,147 @@ export function emailBelongsToUser(
   const row = getDb()
     .prepare(
       `SELECT 1 AS hit
-         FROM email_recipients r
-         JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
-        WHERE r.email_id = ? AND ue.user_id = ?
-        LIMIT 1`,
+         WHERE EXISTS (
+          SELECT 1
+            FROM email_recipients r
+            JOIN user_emails ue ON ue.address = r.address COLLATE NOCASE
+           WHERE r.email_id = ? AND ue.user_id = ?
+        )
+           OR EXISTS (
+          SELECT 1 FROM email_sent es
+           WHERE es.email_id = ? AND es.user_id = ?
+        )`,
     )
-    .get(emailId, userId) as { hit: number } | undefined
+    .get(emailId, userId, emailId, userId) as { hit: number } | undefined
   return !!row
+}
+
+function addrsToJson(addrs: string[]): string {
+  return JSON.stringify(addrs.map((address) => ({ address })))
+}
+
+function buildMinimalRaw(input: {
+  from: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  date: string
+  text?: string
+  html?: string
+}): Buffer {
+  const lines = [
+    `From: ${input.from}`,
+    `To: ${input.to.join(', ')}`,
+  ]
+  if (input.cc.length) lines.push(`Cc: ${input.cc.join(', ')}`)
+  if (input.bcc.length) lines.push(`Bcc: ${input.bcc.join(', ')}`)
+  lines.push(`Subject: ${input.subject}`)
+  lines.push(`Date: ${input.date}`)
+  lines.push('MIME-Version: 1.0')
+  if (input.html?.trim()) {
+    lines.push('Content-Type: text/html; charset=utf-8')
+    lines.push('')
+    lines.push(input.html)
+  } else {
+    lines.push('Content-Type: text/plain; charset=utf-8')
+    lines.push('')
+    lines.push(input.text ?? '')
+  }
+  return Buffer.from(lines.join('\r\n'), 'utf-8')
+}
+
+export type OutboundMailInput = {
+  from: string
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  replyTo?: string[]
+  subject: string
+  text?: string
+  html?: string
+  resendId: string
+}
+
+/** 发信成功后写入本地库，供「已发送」文件夹展示 */
+export function insertOutboundEmail(
+  userId: string,
+  input: OutboundMailInput,
+): { id: string } {
+  const id = randomUUID()
+  const sentAt = new Date().toISOString()
+  const to = input.to.map((a) => a.trim().toLowerCase())
+  const cc = (input.cc ?? []).map((a) => a.trim().toLowerCase())
+  const bcc = (input.bcc ?? []).map((a) => a.trim().toLowerCase())
+  const replyTo = (input.replyTo ?? []).map((a) => a.trim().toLowerCase())
+  const from = input.from.trim().toLowerCase()
+  const text = input.text?.trim() || null
+  const html = input.html?.trim() || null
+  const raw = buildMinimalRaw({
+    from,
+    to,
+    cc,
+    bcc,
+    subject: input.subject,
+    date: sentAt,
+    text: text ?? undefined,
+    html: html ?? undefined,
+  })
+  const bodySha256 = createHash('sha256')
+    .update(
+      `${input.resendId}\0${from}\0${input.subject}\0${html ?? text ?? ''}`,
+      'utf-8',
+    )
+    .digest('hex')
+  const headersJson = JSON.stringify({
+    'X-Resend-Id': input.resendId,
+    'X-MailSilver-Outbound': '1',
+  })
+  const db = getDb()
+
+  const insertEmail = db.prepare(
+    `INSERT INTO emails (id, received_at, size, body_sha256, raw, parse_status, parse_error)
+     VALUES (?, ?, ?, ?, ?, 'ok', NULL)`,
+  )
+  const insertParsed = db.prepare(
+    `INSERT INTO emails_parsed (
+       email_id, message_id, subject, from_addr, from_name, to_json, cc_json, bcc_json,
+       reply_to_json, date, text, html, headers_json, attachments_meta_json
+     ) VALUES (?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, '[]')`,
+  )
+  const insertRecipient = db.prepare(
+    `INSERT OR IGNORE INTO email_recipients (email_id, address) VALUES (?, ?)`,
+  )
+  const insertSent = db.prepare(
+    `INSERT INTO email_sent (user_id, email_id, from_address, sent_at, resend_id)
+     VALUES (?, ?, ?, ?, ?)`,
+  )
+
+  const allRecipients = [...new Set([...to, ...cc, ...bcc])]
+
+  const tx = db.transaction(() => {
+    insertEmail.run(id, sentAt, raw.length, bodySha256, raw)
+    insertParsed.run(
+      id,
+      input.subject,
+      from,
+      addrsToJson(to),
+      addrsToJson(cc),
+      addrsToJson(bcc),
+      addrsToJson(replyTo),
+      sentAt,
+      text,
+      html,
+      headersJson,
+    )
+    for (const addr of allRecipients) {
+      insertRecipient.run(id, addr)
+    }
+    insertSent.run(userId, id, from, sentAt, input.resendId)
+  })
+
+  tx()
+  return { id }
 }
 
 /** 从 parsed row 的 to/cc/bcc JSON 列里抽取匹配本服务域名的收件人 */

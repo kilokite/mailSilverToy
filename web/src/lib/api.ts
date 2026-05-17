@@ -17,6 +17,7 @@ export type EmailListItem = {
   from_addr: string | null
   from_name: string | null
   date: string | null
+  to_addr?: string | null
   starred: boolean
   trashed: boolean
 }
@@ -151,6 +152,7 @@ export function listEmails(
     q?: string
     starred?: boolean
     trashed?: boolean
+    sent?: boolean
   } = {},
 ) {
   const q = new URLSearchParams()
@@ -160,6 +162,7 @@ export function listEmails(
   if (search) q.set("q", search)
   if (params.starred) q.set("starred", "1")
   if (params.trashed) q.set("trashed", "1")
+  if (params.sent) q.set("sent", "1")
   if (params.address && params.address !== "all") {
     q.set("address", params.address)
   }
@@ -283,7 +286,7 @@ export function sendOutboundMail(input: {
   if (input.cc?.trim()) body.cc = input.cc.trim()
   if (input.bcc?.trim()) body.bcc = input.bcc.trim()
   if (input.replyTo?.trim()) body.replyTo = input.replyTo.trim()
-  return request<{ ok: true; id: string }>(`/api/email/send`, {
+  return request<{ ok: true; id: string; resendId: string }>(`/api/email/send`, {
     method: "POST",
     body: JSON.stringify(body),
   })
