@@ -20,6 +20,8 @@ export type EmailListItem = {
   from_addr: string | null
   from_name: string | null
   date: string | null
+  starred: boolean
+  trashed: boolean
 }
 
 export type ListEmailParams = {
@@ -31,6 +33,10 @@ export type ListEmailParams = {
   recipientAddress?: string | null
   /** 模糊搜索：主题、发件人、正文、收件人地址 */
   q?: string | null
+  /** 仅返回已星标 */
+  starred?: boolean | null
+  /** true：仅回收站；默认排除回收站 */
+  trashed?: boolean | null
 }
 
 const MAX_SEARCH_Q_LEN = 128
@@ -39,6 +45,31 @@ function escapeLikePattern(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
+function rowToListItem(row: Record<string, unknown>): EmailListItem {
+  return {
+    id: row.id as string,
+    received_at: row.received_at as string,
+    parse_status: row.parse_status as ParseStatus,
+    subject: (row.subject as string | null) ?? null,
+    from_addr: (row.from_addr as string | null) ?? null,
+    from_name: (row.from_name as string | null) ?? null,
+    date: (row.date as string | null) ?? null,
+    starred: !!(row.starred as number | boolean),
+    trashed: !!(row.trashed as number | boolean),
+  }
+}
+
+const LIST_SELECT = `e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date`
+
+function listSelectWithUserState(): string {
+  return `${LIST_SELECT},
+         CASE WHEN s.email_id IS NOT NULL THEN 1 ELSE 0 END AS starred,
+         CASE WHEN t.email_id IS NOT NULL THEN 1 ELSE 0 END AS trashed`
+}
+
+const USER_STATE_JOINS = `LEFT JOIN email_stars s ON s.email_id = e.id AND s.user_id = ?
+          LEFT JOIN email_trash t ON t.email_id = e.id AND t.user_id = ?`
+
 export function listEmails(params: ListEmailParams): EmailListItem[] {
   const limit = Math.min(Math.max(1, params.limit), 100)
   const before = params.before?.trim() || null
@@ -46,10 +77,14 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
   const recipientAddress = params.recipientAddress?.trim().toLowerCase() || null
   const qRaw = params.q?.trim().slice(0, MAX_SEARCH_Q_LEN) || null
   const q = qRaw ? qRaw.toLowerCase() : null
+  const starredOnly = params.starred === true
+  const trashedOnly = params.trashed === true
 
   const where: string[] = []
   const args: unknown[] = []
+  const joinArgs: unknown[] = []
   if (userId) {
+    joinArgs.push(userId, userId)
     where.push(
       `EXISTS (
         SELECT 1
@@ -61,6 +96,14 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
     )
     args.push(userId)
     if (recipientAddress) args.push(recipientAddress)
+    if (trashedOnly) {
+      where.push('t.email_id IS NOT NULL')
+    } else {
+      where.push('t.email_id IS NULL')
+    }
+    if (starredOnly) {
+      where.push('s.email_id IS NOT NULL')
+    }
   }
   if (q) {
     const pattern = `%${escapeLikePattern(q)}%`
@@ -84,26 +127,48 @@ export function listEmails(params: ListEmailParams): EmailListItem[] {
     args.push(before)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const sql = `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date
+  const userJoins = userId ? USER_STATE_JOINS : ''
+  const selectSql = userId
+    ? listSelectWithUserState()
+    : `${LIST_SELECT}, 0 AS starred, 0 AS trashed`
+  const sql = `SELECT ${selectSql}
                  FROM emails e
                  LEFT JOIN emails_parsed p ON p.email_id = e.id
+                 ${userJoins}
                  ${whereSql}
                  ORDER BY e.received_at DESC
                  LIMIT ?`
-  args.push(limit)
-  return getDb().prepare(sql).all(...args) as EmailListItem[]
+  const allArgs = [...joinArgs, ...args, limit]
+  const rows = getDb().prepare(sql).all(...allArgs) as Array<Record<string, unknown>>
+  return rows.map(rowToListItem)
 }
 
-export function getEmailListItem(id: string): EmailListItem | null {
+export function getEmailListItem(
+  id: string,
+  userId?: string | null,
+): EmailListItem | null {
+  const uid = userId?.trim() || null
+  if (uid) {
+    const row = getDb()
+      .prepare(
+        `SELECT ${listSelectWithUserState()}
+           FROM emails e
+           LEFT JOIN emails_parsed p ON p.email_id = e.id
+           ${USER_STATE_JOINS}
+          WHERE e.id = ?`,
+      )
+      .get(uid, uid, id) as Record<string, unknown> | undefined
+    return row ? rowToListItem(row) : null
+  }
   const row = getDb()
     .prepare(
-      `SELECT e.id, e.received_at, e.parse_status, p.subject, p.from_addr, p.from_name, p.date
+      `SELECT ${LIST_SELECT}, 0 AS starred, 0 AS trashed
          FROM emails e
          LEFT JOIN emails_parsed p ON p.email_id = e.id
         WHERE e.id = ?`,
     )
-    .get(id) as EmailListItem | undefined
-  return row ?? null
+    .get(id) as Record<string, unknown> | undefined
+  return row ? rowToListItem(row) : null
 }
 
 export type EmailDetail = {
@@ -114,6 +179,8 @@ export type EmailDetail = {
   parse_status: ParseStatus
   parse_error: string | null
   parsed: Record<string, unknown> | null
+  starred: boolean
+  trashed: boolean
 }
 
 function safeJson(s: string | null): unknown {
@@ -125,18 +192,27 @@ function safeJson(s: string | null): unknown {
   }
 }
 
-export function getEmailById(id: string): EmailDetail | null {
+export function getEmailById(id: string, userId?: string | null): EmailDetail | null {
+  const uid = userId?.trim() || null
+  const stateSelect = uid
+    ? `, CASE WHEN s.email_id IS NOT NULL THEN 1 ELSE 0 END AS starred,
+           CASE WHEN t.email_id IS NOT NULL THEN 1 ELSE 0 END AS trashed`
+    : `, 0 AS starred, 0 AS trashed`
+  const stateJoin = uid ? USER_STATE_JOINS : ''
+  const stateArgs = uid ? [uid, uid] : []
   const row = getDb()
     .prepare(
       `SELECT e.id, e.received_at, e.size, e.body_sha256, e.parse_status, e.parse_error,
               p.email_id AS parsed_email_id,
               p.message_id, p.subject, p.from_addr, p.from_name, p.to_json, p.cc_json, p.bcc_json,
               p.reply_to_json, p.date, p.text, p.html, p.headers_json, p.attachments_meta_json
+              ${stateSelect}
        FROM emails e
        LEFT JOIN emails_parsed p ON p.email_id = e.id
+       ${stateJoin}
        WHERE e.id = ?`,
     )
-    .get(id) as Record<string, unknown> | undefined
+    .get(...stateArgs, id) as Record<string, unknown> | undefined
   if (!row) return null
 
   const hasParsedRow = row.parsed_email_id != null
@@ -167,6 +243,44 @@ export function getEmailById(id: string): EmailDetail | null {
     parse_status: row.parse_status as ParseStatus,
     parse_error: (row.parse_error as string | null) ?? null,
     parsed,
+    starred: !!(row.starred as number | boolean),
+    trashed: !!(row.trashed as number | boolean),
+  }
+}
+
+export function setEmailTrashed(
+  userId: string,
+  emailId: string,
+  trashed: boolean,
+): void {
+  const db = getDb()
+  if (trashed) {
+    db.prepare(
+      `INSERT OR REPLACE INTO email_trash (user_id, email_id, trashed_at)
+       VALUES (?, ?, ?)`,
+    ).run(userId, emailId, new Date().toISOString())
+  } else {
+    db.prepare(
+      `DELETE FROM email_trash WHERE user_id = ? AND email_id = ?`,
+    ).run(userId, emailId)
+  }
+}
+
+export function setEmailStarred(
+  userId: string,
+  emailId: string,
+  starred: boolean,
+): void {
+  const db = getDb()
+  if (starred) {
+    db.prepare(
+      `INSERT OR REPLACE INTO email_stars (user_id, email_id, starred_at)
+       VALUES (?, ?, ?)`,
+    ).run(userId, emailId, new Date().toISOString())
+  } else {
+    db.prepare(
+      `DELETE FROM email_stars WHERE user_id = ? AND email_id = ?`,
+    ).run(userId, emailId)
   }
 }
 

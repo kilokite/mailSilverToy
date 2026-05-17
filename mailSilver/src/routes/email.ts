@@ -13,6 +13,8 @@ import {
   getRawById,
   insertEmailTransaction,
   listEmails,
+  setEmailStarred,
+  setEmailTrashed,
 } from '../services/emailRepo.js'
 import { emitEmailNew, subscribeEmailNew } from '../services/emailBus.js'
 import { listEmailsOfUser } from '../services/userEmailRepo.js'
@@ -21,6 +23,12 @@ const email = new Hono()
 
 function sha256Hex(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
+}
+
+function parseTruthyQuery(v: string | undefined): boolean {
+  if (!v) return false
+  const s = v.trim().toLowerCase()
+  return s === '1' || s === 'true' || s === 'yes'
 }
 
 email.post('/', requireWebhookSecret, async (c) => {
@@ -90,12 +98,16 @@ email.get('/', requireUser, (c) => {
   if (addressRaw && !owned.includes(addressRaw)) {
     return c.json({ error: 'invalid address' }, 400)
   }
+  const starred = parseTruthyQuery(c.req.query('starred'))
+  const trashed = parseTruthyQuery(c.req.query('trashed'))
   const items = listEmails({
     limit: Number.isFinite(limit) ? limit : 20,
     before,
     userId: user.id,
     recipientAddress: addressRaw,
     q,
+    starred: starred || null,
+    trashed: trashed || null,
   })
   return c.json({ items })
 })
@@ -168,6 +180,52 @@ email.get('/stream', requireUser, (c) => {
   })
 })
 
+email.patch('/:id/trash', requireUser, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  if (!emailBelongsToUser(id, user.id)) {
+    return c.json({ error: 'Not Found' }, 404)
+  }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid json' }, 400)
+  }
+  if (!body || typeof body !== 'object' || !('trashed' in body)) {
+    return c.json({ error: 'trashed required' }, 400)
+  }
+  const trashed = (body as { trashed: unknown }).trashed
+  if (typeof trashed !== 'boolean') {
+    return c.json({ error: 'trashed must be boolean' }, 400)
+  }
+  setEmailTrashed(user.id, id, trashed)
+  return c.json({ ok: true, trashed })
+})
+
+email.patch('/:id/star', requireUser, async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  if (!emailBelongsToUser(id, user.id)) {
+    return c.json({ error: 'Not Found' }, 404)
+  }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid json' }, 400)
+  }
+  if (!body || typeof body !== 'object' || !('starred' in body)) {
+    return c.json({ error: 'starred required' }, 400)
+  }
+  const starred = (body as { starred: unknown }).starred
+  if (typeof starred !== 'boolean') {
+    return c.json({ error: 'starred must be boolean' }, 400)
+  }
+  setEmailStarred(user.id, id, starred)
+  return c.json({ ok: true, starred })
+})
+
 email.get('/:id/raw', requireUser, (c) => {
   const user = c.get('user')
   const id = c.req.param('id')
@@ -187,7 +245,7 @@ email.get('/:id', requireUser, (c) => {
   if (!emailBelongsToUser(id, user.id)) {
     return c.json({ error: 'Not Found' }, 404)
   }
-  const row = getEmailById(id)
+  const row = getEmailById(id, user.id)
   if (!row) return c.json({ error: 'Not Found' }, 404)
   return c.json(row)
 })

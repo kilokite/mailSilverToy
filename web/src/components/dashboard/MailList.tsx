@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { Search, AlertTriangle, Clock, Zap } from "lucide-react"
+import { Search, AlertTriangle, Clock, Zap, Star } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
@@ -61,6 +61,7 @@ export function MailList({
   hasMore,
   loadingMore,
   onLoadMore,
+  onToggleStar,
 }: {
   mails: EmailListItem[]
   selectedId: string | null
@@ -74,6 +75,7 @@ export function MailList({
   hasMore: boolean
   loadingMore: boolean
   onLoadMore: () => void
+  onToggleStar?: (id: string, starred: boolean) => void
 }) {
   const sentinelRef = useRef<HTMLLIElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -145,13 +147,34 @@ export function MailList({
               const isPending = m.parse_status === "pending"
               const fastDelta = fastDeliveryDelta(m.date, m.received_at)
               return (
-                <li key={m.id}>
+                <li
+                  key={m.id}
+                  className={cn(
+                    "flex w-full items-start gap-1 border-b px-2 py-3 transition-colors",
+                    active ? "bg-accent" : "hover:bg-accent/50",
+                  )}
+                >
+                  {onToggleStar ? (
+                    <button
+                      type="button"
+                      title={m.starred ? "取消星标" : "加星标"}
+                      className="mt-1 shrink-0 rounded p-1 text-muted-foreground hover:text-amber-500"
+                      onClick={() => onToggleStar(m.id, !m.starred)}
+                    >
+                      <Star
+                        className={cn(
+                          "h-4 w-4",
+                          m.starred && "fill-current text-amber-500",
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <span className="w-6 shrink-0" />
+                  )}
                   <button
+                    type="button"
                     onClick={() => onSelect(m.id)}
-                    className={cn(
-                      "flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors",
-                      active ? "bg-accent" : "hover:bg-accent/50",
-                    )}
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
                   >
                     <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
                       {initials(m.from_name || m.from_addr)}

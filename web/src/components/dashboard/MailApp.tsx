@@ -8,6 +8,8 @@ import {
   getEmail,
   listEmails,
   openMailStream,
+  setEmailStarred,
+  setEmailTrashed,
   type AuthUser,
   type EmailDetail,
   type EmailListItem,
@@ -27,6 +29,10 @@ const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 
 type LiveStatus = "connecting" | "live" | "offline"
+
+function isMailListFolder(folder: Folder): folder is "inbox" | "starred" | "trash" {
+  return folder === "inbox" || folder === "starred" || folder === "trash"
+}
 
 function matchesListItemSearch(item: EmailListItem, kw: string): boolean {
   const lower = kw.toLowerCase()
@@ -77,12 +83,14 @@ export function MailApp({ user }: { user: AuthUser }) {
       limit: PAGE_SIZE,
       address: mailboxFilter,
       q: debouncedQuery.trim() || undefined,
+      starred: folder === "starred" ? true : undefined,
+      trashed: folder === "trash" ? true : undefined,
     }),
-    [mailboxFilter, debouncedQuery],
+    [folder, mailboxFilter, debouncedQuery],
   )
 
   const refreshList = useCallback(async () => {
-    if (folder !== "inbox") {
+    if (!isMailListFolder(folder)) {
       setItems([])
       setListError(null)
       setListLoading(false)
@@ -111,7 +119,7 @@ export function MailApp({ user }: { user: AuthUser }) {
   }, [folder, listFetchParams])
 
   const loadMore = useCallback(async () => {
-    if (folder !== "inbox" || listLoading || loadingMore || !hasMore) return
+    if (!isMailListFolder(folder) || listLoading || loadingMore || !hasMore) return
     const last = items[items.length - 1]
     if (!last) return
     setLoadingMore(true)
@@ -136,6 +144,66 @@ export function MailApp({ user }: { user: AuthUser }) {
       setLoadingMore(false)
     }
   }, [folder, hasMore, items, listFetchParams, listLoading, loadingMore])
+
+  const toggleStar = useCallback(
+    async (id: string, starred: boolean) => {
+      const prevItems = items
+      const prevDetail = detail
+      setItems((prev) => {
+        if (folder === "starred" && !starred) {
+          return prev.filter((m) => m.id !== id)
+        }
+        return prev.map((m) => (m.id === id ? { ...m, starred } : m))
+      })
+      if (detail?.id === id) {
+        setDetail((d) => (d ? { ...d, starred } : d))
+        const cached = detailCache.current.get(id)
+        if (cached) detailCache.current.set(id, { ...cached, starred })
+      }
+      try {
+        await setEmailStarred(id, starred)
+      } catch (e) {
+        setItems(prevItems)
+        if (prevDetail?.id === id) setDetail(prevDetail)
+        setListError(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [detail, folder, items],
+  )
+
+  const toggleTrash = useCallback(
+    async (id: string, trashed: boolean) => {
+      const prevItems = items
+      const prevDetail = detail
+      const removeFromList =
+        (folder === "trash" && !trashed) ||
+        ((folder === "inbox" || folder === "starred") && trashed)
+      setItems((prev) => {
+        if (removeFromList) return prev.filter((m) => m.id !== id)
+        return prev.map((m) => (m.id === id ? { ...m, trashed } : m))
+      })
+      if (detail?.id === id) {
+        setDetail((d) => (d ? { ...d, trashed } : d))
+        const cached = detailCache.current.get(id)
+        if (cached) detailCache.current.set(id, { ...cached, trashed })
+      }
+      if (removeFromList && selectedId === id) {
+        const next = prevItems.filter((m) => m.id !== id)
+        setSelectedId(next[0]?.id ?? null)
+        if (folder === "trash" && !trashed) {
+          setDetail(null)
+        }
+      }
+      try {
+        await setEmailTrashed(id, trashed)
+      } catch (e) {
+        setItems(prevItems)
+        if (prevDetail?.id === id) setDetail(prevDetail)
+        setListError(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [detail, folder, items, selectedId],
+  )
 
   useEffect(() => {
     void refreshList()
@@ -184,6 +252,7 @@ export function MailApp({ user }: { user: AuthUser }) {
       onReady: () => setLiveStatus("live"),
       onError: () => setLiveStatus("offline"),
       onMail: (item, addresses) => {
+        if (folder !== "inbox") return
         if (
           mailboxFilter !== "all" &&
           !addresses.map((a) => a.toLowerCase()).includes(mailboxFilter.toLowerCase())
@@ -192,15 +261,20 @@ export function MailApp({ user }: { user: AuthUser }) {
         }
         const kw = debouncedQueryRef.current.trim()
         if (kw && !matchesListItemSearch(item, kw)) return
+        const row: EmailListItem = {
+          ...item,
+          starred: item.starred ?? false,
+          trashed: item.trashed ?? false,
+        }
         setItems((prev) => {
-          if (prev.some((m) => m.id === item.id)) return prev
-          return [item, ...prev]
+          if (prev.some((m) => m.id === row.id)) return prev
+          return [row, ...prev]
         })
-        setSelectedId((prev) => prev ?? item.id)
+        setSelectedId((prev) => prev ?? row.id)
       },
     })
     return () => es.close()
-  }, [localUser.id, mailboxFilter])
+  }, [folder, localUser.id, mailboxFilter])
 
   return (
     <div className="flex h-svh w-full overflow-hidden bg-background text-foreground">
@@ -254,8 +328,21 @@ export function MailApp({ user }: { user: AuthUser }) {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={() => void loadMore()}
+            onToggleStar={(id, starred) => void toggleStar(id, starred)}
           />
-          <MailView mail={detail} loading={detailLoading} error={detailError} />
+          <MailView
+            mail={detail}
+            loading={detailLoading}
+            error={detailError}
+            onToggleStar={(starred) => {
+              if (!selectedId) return
+              void toggleStar(selectedId, starred)
+            }}
+            onToggleTrash={(trashed) => {
+              if (!selectedId) return
+              void toggleTrash(selectedId, trashed)
+            }}
+          />
         </>
       )}
     </div>

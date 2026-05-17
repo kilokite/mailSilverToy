@@ -142,6 +142,44 @@ function migrateMaxEmailsColumn(): void {
   )
 }
 
+function tableExists(name: string): boolean {
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT 1 AS hit FROM sqlite_master WHERE type = 'table' AND name = ?`,
+    )
+    .get(name) as { hit: number } | undefined
+  return !!row
+}
+
+function migrateEmailStarsTable(): void {
+  if (tableExists('email_stars')) return
+  const db = getDb()
+  db.exec(`
+CREATE TABLE email_stars (
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email_id   TEXT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+  starred_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, email_id)
+);
+CREATE INDEX idx_email_stars_user ON email_stars(user_id, starred_at DESC);
+`)
+}
+
+function migrateEmailTrashTable(): void {
+  if (tableExists('email_trash')) return
+  const db = getDb()
+  db.exec(`
+CREATE TABLE email_trash (
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email_id   TEXT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+  trashed_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, email_id)
+);
+CREATE INDEX idx_email_trash_user ON email_trash(user_id, trashed_at DESC);
+`)
+}
+
 export function runMigrations(): void {
   const db = getDb()
   if (hasLegacySchema()) {
@@ -150,4 +188,6 @@ export function runMigrations(): void {
   }
   db.exec(sql)
   migrateMaxEmailsColumn()
+  migrateEmailStarsTable()
+  migrateEmailTrashTable()
 }

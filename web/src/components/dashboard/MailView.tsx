@@ -67,10 +67,14 @@ export function MailView({
   mail,
   loading,
   error,
+  onToggleStar,
+  onToggleTrash,
 }: {
   mail: EmailDetail | null
   loading?: boolean
   error?: string | null
+  onToggleStar?: (starred: boolean) => void
+  onToggleTrash?: (trashed: boolean) => void
 }) {
   const fromName = mail?.parsed?.from_name ?? null
   const fromAddr = mail?.parsed?.from_addr ?? null
@@ -123,11 +127,23 @@ export function MailView({
         <Button variant="ghost" size="icon" title="归档">
           <Archive className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" title="删除">
+        <Button
+          variant="ghost"
+          size="icon"
+          title={mail.trashed ? "恢复" : "移到回收站"}
+          onClick={() => onToggleTrash?.(!mail.trashed)}
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" title="星标">
-          <Star className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          title={mail.starred ? "取消星标" : "加星标"}
+          onClick={() => onToggleStar?.(!mail.starred)}
+        >
+          <Star
+            className={mail.starred ? "h-4 w-4 fill-current text-amber-500" : "h-4 w-4"}
+          />
         </Button>
         <a
           href={rawEmailUrl(mail.id)}

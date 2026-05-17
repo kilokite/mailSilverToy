@@ -17,6 +17,8 @@ export type EmailListItem = {
   from_addr: string | null
   from_name: string | null
   date: string | null
+  starred: boolean
+  trashed: boolean
 }
 
 export type AddrLite = { name?: string; address?: string }
@@ -47,6 +49,8 @@ export type EmailDetail = {
   parse_status: ParseStatus
   parse_error: string | null
   parsed: EmailParsed | null
+  starred: boolean
+  trashed: boolean
 }
 
 export type AuthUser = {
@@ -145,6 +149,8 @@ export function listEmails(
     before?: string
     address?: MailboxFilter
     q?: string
+    starred?: boolean
+    trashed?: boolean
   } = {},
 ) {
   const q = new URLSearchParams()
@@ -152,6 +158,8 @@ export function listEmails(
   if (params.before) q.set("before", params.before)
   const search = params.q?.trim()
   if (search) q.set("q", search)
+  if (params.starred) q.set("starred", "1")
+  if (params.trashed) q.set("trashed", "1")
   if (params.address && params.address !== "all") {
     q.set("address", params.address)
   }
@@ -163,6 +171,20 @@ export function listEmails(
 
 export function getEmail(id: string) {
   return request<EmailDetail>(`/api/email/${encodeURIComponent(id)}`)
+}
+
+export function setEmailStarred(id: string, starred: boolean) {
+  return request<{ ok: true; starred: boolean }>(
+    `/api/email/${encodeURIComponent(id)}/star`,
+    { method: "PATCH", body: JSON.stringify({ starred }) },
+  )
+}
+
+export function setEmailTrashed(id: string, trashed: boolean) {
+  return request<{ ok: true; trashed: boolean }>(
+    `/api/email/${encodeURIComponent(id)}/trash`,
+    { method: "PATCH", body: JSON.stringify({ trashed }) },
+  )
 }
 
 export function rawEmailUrl(id: string) {
