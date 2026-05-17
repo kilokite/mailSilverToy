@@ -1,33 +1,17 @@
 import { Hono } from 'hono'
 import { requireUser } from '../middleware/auth.js'
 import {
+  EmailQuotaExceededError,
   EmailTakenError,
   addEmailForUser,
   addressLooksValid,
   deleteEmailForUser,
   listEmailsOfUser,
-  splitAddress,
+  normalizeAddressInput,
 } from '../services/userEmailRepo.js'
 import { emitHook } from '../services/hooks/index.js'
 
 const me = new Hono()
-
-type AddBody = { address?: unknown; prefix?: unknown; domain?: unknown }
-
-function normalizeAddressInput(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null
-  const b = body as AddBody
-  if (typeof b.address === 'string') {
-    return b.address.trim().toLowerCase()
-  }
-  if (typeof b.prefix === 'string' && typeof b.domain === 'string') {
-    const local = b.prefix.trim().toLowerCase()
-    const domain = b.domain.trim().toLowerCase()
-    const address = `${local}${domain}`
-    return splitAddress(address) ? address : null
-  }
-  return null
-}
 
 me.get('/emails', requireUser, (c) => {
   const user = c.get('user')
@@ -48,6 +32,12 @@ me.post('/emails', requireUser, (c) => {
       } catch (e) {
         if (e instanceof EmailTakenError) {
           return c.json({ error: '该邮箱已被占用' }, 409)
+        }
+        if (e instanceof EmailQuotaExceededError) {
+          return c.json(
+            { error: '已达邮箱数量上限', max_emails: e.maxEmails },
+            403,
+          )
         }
         throw e
       }

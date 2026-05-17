@@ -44,7 +44,8 @@ export function getUserFromSession(token: string): UserRow | null {
       `SELECT s.token AS token, s.expires_at AS expires_at,
               u.id AS id, u.username AS username,
               u.password_hash AS password_hash, u.password_salt AS password_salt,
-              u.created_at AS created_at, u.last_login_at AS last_login_at
+              u.created_at AS created_at, u.last_login_at AS last_login_at,
+              u.max_emails AS max_emails
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.token = ?`,
@@ -64,6 +65,7 @@ export function getUserFromSession(token: string): UserRow | null {
     password_salt: row.password_salt,
     created_at: row.created_at,
     last_login_at: row.last_login_at,
+    max_emails: Number(row.max_emails),
   }
 }
 

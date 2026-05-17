@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from "react"
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { AlertTriangle, Loader2, RefreshCw, Search, Settings2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { listAdminUsers, type AdminUserRow, ApiError } from "@/lib/api"
+import { AdminUserDetailDialog } from "@/components/admin/AdminUserDetailDialog"
 
 function formatIso(iso: string | null) {
   if (!iso) return "—"
@@ -20,6 +23,9 @@ export function AdminUsersPage() {
   const [rows, setRows] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [selected, setSelected] = useState<AdminUserRow | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -39,26 +45,51 @@ export function AdminUsersPage() {
     void load()
   }, [load])
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((u) => u.username.toLowerCase().includes(q))
+  }, [rows, search])
+
+  function openDetail(user: AdminUserRow) {
+    setSelected(user)
+    setDetailOpen(true)
+  }
+
+  function handleUserUpdated(updated: AdminUserRow) {
+    setRows((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+    setSelected(updated)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
         <div>
           <h1 className="text-sm font-semibold">注册用户</h1>
-          <p className="text-xs text-muted-foreground">
-            各用户作为收件人关联到的邮件数量（按注册时间倒序）
-          </p>
+          <p className="text-xs text-muted-foreground">搜索用户，通过「管理」调整配额与邮箱</p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={loading}
-          onClick={() => void load()}
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索用户名…"
+              className="h-8 w-40 pl-7 text-xs md:w-52"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            刷新
+          </Button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -75,8 +106,10 @@ export function AdminUsersPage() {
               重试
             </Button>
           </div>
-        ) : rows.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">暂无注册用户</p>
+        ) : filtered.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground">
+            {rows.length === 0 ? "暂无注册用户" : "无匹配用户"}
+          </p>
         ) : (
           <div className="overflow-hidden rounded-lg border">
             <table className="w-full text-left text-sm">
@@ -86,19 +119,29 @@ export function AdminUsersPage() {
                   <th className="px-3 py-2.5">邮箱</th>
                   <th className="px-3 py-2.5">注册时间</th>
                   <th className="px-3 py-2.5">最后登录</th>
-                  <th className="px-3 py-2.5 text-right">拥有邮箱数</th>
+                  <th className="px-3 py-2.5 text-right">配额</th>
                   <th className="px-3 py-2.5 text-right">邮件数</th>
+                  <th className="px-3 py-2.5 text-right">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {rows.map((u) => (
+                {filtered.map((u) => (
                   <tr key={u.id} className="hover:bg-muted/30">
                     <td className="px-3 py-2 font-mono text-xs">{u.username}</td>
                     <td
-                      className="max-w-[260px] truncate px-3 py-2 font-mono text-xs"
+                      className="max-w-[200px] truncate px-3 py-2 font-mono text-xs"
                       title={u.emails.join(", ")}
                     >
-                      {u.emails.join(", ")}
+                      {u.emails.length > 0 ? (
+                        <>
+                          {u.emails[0]}
+                          {u.emails.length > 1 ? (
+                            <span className="text-muted-foreground"> +{u.emails.length - 1}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                       {formatIso(u.created_at)}
@@ -106,11 +149,25 @@ export function AdminUsersPage() {
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
                       {formatIso(u.last_login_at)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium">
-                      {u.owned_email_count}
+                    <td className="px-3 py-2 text-right">
+                      <Badge variant="secondary" className="tabular-nums">
+                        {u.owned_email_count}/{u.max_emails}
+                      </Badge>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium">
                       {u.email_count}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() => openDetail(u)}
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                        管理
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -119,6 +176,14 @@ export function AdminUsersPage() {
           </div>
         )}
       </div>
+
+      <AdminUserDetailDialog
+        user={selected}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        onUserUpdated={handleUserUpdated}
+      />
     </div>
   )
 }
+

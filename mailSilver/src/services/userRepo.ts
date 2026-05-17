@@ -9,6 +9,7 @@ export type UserRow = {
   password_salt: string
   created_at: string
   last_login_at: string | null
+  max_emails: number
 }
 
 /** 仅允许小写字母/数字/`.`/`_`/`-`，首尾必须是字母数字，长度 1–32 */
@@ -26,24 +27,37 @@ export function isValidPassword(password: string): boolean {
   return typeof password === 'string' && password.length >= 6 && password.length <= 128
 }
 
+function mapUserRow(
+  row:
+    | (Omit<UserRow, 'max_emails'> & { max_emails: number | bigint })
+    | undefined,
+): UserRow | null {
+  if (!row) return null
+  return { ...row, max_emails: Number(row.max_emails) }
+}
+
 export function getUserByUsername(username: string): UserRow | null {
   const row = getDb()
     .prepare(
-      `SELECT id, username, password_hash, password_salt, created_at, last_login_at
+      `SELECT id, username, password_hash, password_salt, created_at, last_login_at, max_emails
        FROM users WHERE username = ? COLLATE NOCASE`,
     )
-    .get(username) as UserRow | undefined
-  return row ?? null
+    .get(username) as
+    | (Omit<UserRow, 'max_emails'> & { max_emails: number | bigint })
+    | undefined
+  return mapUserRow(row)
 }
 
 export function getUserById(id: string): UserRow | null {
   const row = getDb()
     .prepare(
-      `SELECT id, username, password_hash, password_salt, created_at, last_login_at
+      `SELECT id, username, password_hash, password_salt, created_at, last_login_at, max_emails
        FROM users WHERE id = ?`,
     )
-    .get(id) as UserRow | undefined
-  return row ?? null
+    .get(id) as
+    | (Omit<UserRow, 'max_emails'> & { max_emails: number | bigint })
+    | undefined
+  return mapUserRow(row)
 }
 
 export class UsernameTakenError extends Error {
@@ -82,6 +96,7 @@ export function createUser(input: {
     password_salt: input.passwordSalt,
     created_at: createdAt,
     last_login_at: null,
+    max_emails: 1,
   }
 }
 
@@ -96,6 +111,7 @@ export type UserWithEmailCount = {
   username: string
   created_at: string
   last_login_at: string | null
+  max_emails: number
   owned_email_count: number
   email_count: number
 }
@@ -104,7 +120,7 @@ export type UserWithEmailCount = {
 export function listUsersWithEmailCounts(): UserWithEmailCount[] {
   const rows = getDb()
     .prepare(
-      `SELECT u.id, u.username, u.created_at, u.last_login_at,
+      `SELECT u.id, u.username, u.created_at, u.last_login_at, u.max_emails,
               (SELECT COUNT(*) FROM user_emails ue WHERE ue.user_id = u.id) AS owned_email_count,
               (SELECT COUNT(DISTINCT r.email_id)
                  FROM email_recipients r
@@ -114,14 +130,24 @@ export function listUsersWithEmailCounts(): UserWithEmailCount[] {
         ORDER BY u.created_at DESC`,
     )
     .all() as Array<
-    Omit<UserWithEmailCount, 'owned_email_count' | 'email_count'> & {
+    Omit<UserWithEmailCount, 'max_emails' | 'owned_email_count' | 'email_count'> & {
+      max_emails: number | bigint
       owned_email_count: number | bigint
       email_count: number | bigint
     }
   >
   return rows.map((r) => ({
     ...r,
+    max_emails: Number(r.max_emails),
     owned_email_count: Number(r.owned_email_count),
     email_count: Number(r.email_count),
   }))
+}
+
+export function updateUserMaxEmails(userId: string, maxEmails: number): UserRow | null {
+  const r = getDb()
+    .prepare(`UPDATE users SET max_emails = ? WHERE id = ?`)
+    .run(maxEmails, userId)
+  if (r.changes === 0) return null
+  return getUserById(userId)
 }

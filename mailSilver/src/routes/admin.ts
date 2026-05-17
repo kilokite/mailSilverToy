@@ -1,8 +1,22 @@
 import { Hono } from 'hono'
 import { requireUser } from '../middleware/auth.js'
 import { requireAdmin } from '../middleware/admin.js'
-import { listUsersWithEmailCounts } from '../services/userRepo.js'
-import { listAllUserEmails } from '../services/userEmailRepo.js'
+import {
+  getUserById,
+  listUsersWithEmailCounts,
+  updateUserMaxEmails,
+} from '../services/userRepo.js'
+import {
+  EmailQuotaExceededError,
+  EmailTakenError,
+  addEmailForUser,
+  addressLooksValid,
+  countEmailsOfUser,
+  deleteEmailForUser,
+  listAllUserEmails,
+  listEmailsOfUser,
+  normalizeAddressInput,
+} from '../services/userEmailRepo.js'
 import { buildTestPayload, emitHook, HOOK_EVENTS, isHookEventName } from '../services/hooks/index.js'
 import { listDeliveriesBySubscription } from '../services/hooks/deliveryRepo.js'
 import {
@@ -74,10 +88,97 @@ admin.get('/users', requireUser, requireAdmin, (c) => {
       emails: emailsByUser.get(u.id) ?? [],
       created_at: u.created_at,
       last_login_at: u.last_login_at,
+      max_emails: u.max_emails,
       owned_email_count: u.owned_email_count,
       email_count: u.email_count,
     })),
   })
+})
+
+admin.patch('/users/:id', requireUser, requireAdmin, async (c) => {
+  const userId = c.req.param('id')
+  const body = (await c.req.json().catch(() => null)) as { max_emails?: unknown } | null
+  if (!body || typeof body.max_emails !== 'number' || !Number.isInteger(body.max_emails)) {
+    return c.json({ error: 'invalid max_emails' }, 400)
+  }
+  const maxEmails = body.max_emails
+  if (maxEmails < 1) {
+    return c.json({ error: 'max_emails must be at least 1' }, 400)
+  }
+  if (!getUserById(userId)) {
+    return c.json({ error: 'Not Found' }, 404)
+  }
+  const owned = countEmailsOfUser(userId)
+  if (maxEmails < owned) {
+    return c.json(
+      {
+        error: 'max_emails cannot be less than owned email count',
+        owned_email_count: owned,
+      },
+      400,
+    )
+  }
+  const updated = updateUserMaxEmails(userId, maxEmails)
+  if (!updated) return c.json({ error: 'Not Found' }, 404)
+  return c.json({
+    ok: true,
+    user: {
+      id: updated.id,
+      username: updated.username,
+      max_emails: updated.max_emails,
+    },
+  })
+})
+
+admin.post('/users/:id/emails', requireUser, requireAdmin, async (c) => {
+  const userId = c.req.param('id')
+  const target = getUserById(userId)
+  if (!target) return c.json({ error: 'Not Found' }, 404)
+
+  const body = await c.req.json().catch(() => null)
+  const address = normalizeAddressInput(body)
+  if (!address || !addressLooksValid(address)) {
+    return c.json({ error: '邮箱地址不合法或后缀不受支持' }, 400)
+  }
+  try {
+    addEmailForUser(userId, address)
+  } catch (e) {
+    if (e instanceof EmailTakenError) {
+      return c.json({ error: '该邮箱已被占用' }, 409)
+    }
+    if (e instanceof EmailQuotaExceededError) {
+      return c.json(
+        { error: '已达邮箱数量上限', max_emails: e.maxEmails },
+        403,
+      )
+    }
+    throw e
+  }
+  emitHook('user:email_added', {
+    userId: target.id,
+    username: target.username,
+    address,
+  })
+  return c.json({ ok: true, emails: listEmailsOfUser(userId) })
+})
+
+admin.delete('/users/:id/emails/:address', requireUser, requireAdmin, (c) => {
+  const userId = c.req.param('id')
+  if (!getUserById(userId)) return c.json({ error: 'Not Found' }, 404)
+
+  const address = decodeURIComponent(c.req.param('address')).trim().toLowerCase()
+  if (!addressLooksValid(address)) {
+    return c.json({ error: '邮箱地址不合法或后缀不受支持' }, 400)
+  }
+  const emails = listEmailsOfUser(userId)
+  if (!emails.includes(address)) {
+    return c.json({ error: 'Not Found' }, 404)
+  }
+  if (emails.length <= 1) {
+    return c.json({ error: '至少保留一个邮箱地址' }, 400)
+  }
+  deleteEmailForUser(userId, address)
+  return c.json({ ok: true, emails: listEmailsOfUser(userId) })
 })
 
 admin.get('/hooks/events', requireUser, requireAdmin, (c) => {

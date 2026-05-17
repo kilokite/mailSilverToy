@@ -53,6 +53,7 @@ export type AuthUser = {
   id: string
   username: string
   emails: string[]
+  max_emails: number
 }
 
 export type MeResponse = {
@@ -67,6 +68,7 @@ export type AdminUserRow = {
   emails: string[]
   created_at: string
   last_login_at: string | null
+  max_emails: number
   owned_email_count: number
   email_count: number
 }
@@ -190,6 +192,36 @@ export function register(input: {
 
 export function listAdminUsers() {
   return request<{ users: AdminUserRow[] }>(`/api/admin/users`)
+}
+
+export function patchAdminUserMaxEmails(userId: string, maxEmails: number) {
+  return request<{
+    ok: true
+    user: { id: string; username: string; max_emails: number }
+  }>(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ max_emails: maxEmails }),
+  })
+}
+
+export function addAdminUserEmail(
+  userId: string,
+  payload: { address?: string; prefix?: string; domain?: string },
+) {
+  return request<{ ok: true; emails: string[] }>(
+    `/api/admin/users/${encodeURIComponent(userId)}/emails`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function deleteAdminUserEmail(userId: string, address: string) {
+  return request<{ ok: true; emails: string[] }>(
+    `/api/admin/users/${encodeURIComponent(userId)}/emails/${encodeURIComponent(address)}`,
+    { method: "DELETE" },
+  )
 }
 
 export function getMyEmails() {

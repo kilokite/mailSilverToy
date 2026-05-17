@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { config } from '../config.js'
 import { getDb } from '../db/sqlite.js'
+import { getUserById } from './userRepo.js'
 
 /** 仅允许小写字母/数字/`.`/`_`/`-`，首尾必须是字母数字，长度 1–32 */
 const LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/
@@ -25,9 +26,35 @@ export function addressLooksValid(address: string): boolean {
   return splitAddress(address) != null
 }
 
+type AddEmailBody = { address?: unknown; prefix?: unknown; domain?: unknown }
+
+export function normalizeAddressInput(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const b = body as AddEmailBody
+  if (typeof b.address === 'string') {
+    return b.address.trim().toLowerCase()
+  }
+  if (typeof b.prefix === 'string' && typeof b.domain === 'string') {
+    const local = b.prefix.trim().toLowerCase()
+    const domain = b.domain.trim().toLowerCase()
+    const address = `${local}${domain}`
+    return splitAddress(address) ? address : null
+  }
+  return null
+}
+
 export class EmailTakenError extends Error {
   constructor(address: string) {
     super(`email already taken: ${address}`)
+  }
+}
+
+export class EmailQuotaExceededError extends Error {
+  readonly maxEmails: number
+
+  constructor(maxEmails: number) {
+    super(`email quota exceeded: max ${maxEmails}`)
+    this.maxEmails = maxEmails
   }
 }
 
@@ -53,10 +80,23 @@ export function listAllUserEmails(): Array<{ user_id: string; address: string }>
     .all() as Array<{ user_id: string; address: string }>
 }
 
+export function countEmailsOfUser(userId: string): number {
+  const row = getDb()
+    .prepare(`SELECT COUNT(*) AS n FROM user_emails WHERE user_id = ?`)
+    .get(userId) as { n: number | bigint }
+  return Number(row.n)
+}
+
 export function addEmailForUser(userId: string, address: string): string {
   const normalized = normalizeAddress(address)
   if (!addressLooksValid(normalized)) {
     throw new Error('invalid email address')
+  }
+  const user = getUserById(userId)
+  if (!user) throw new Error('user not found')
+  const owned = countEmailsOfUser(userId)
+  if (owned >= user.max_emails) {
+    throw new EmailQuotaExceededError(user.max_emails)
   }
   try {
     getDb()

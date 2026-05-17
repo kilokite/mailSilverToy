@@ -22,6 +22,7 @@ import {
   touchLastLogin,
 } from '../services/userRepo.js'
 import {
+  EmailQuotaExceededError,
   EmailTakenError,
   addEmailForUser,
   addressLooksValid,
@@ -62,11 +63,12 @@ function adminAccessForUsername(username: string): boolean {
   return Boolean(au && username.toLowerCase() === au)
 }
 
-function buildUserPayload(user: { id: string; username: string }) {
+function buildUserPayload(user: { id: string; username: string; max_emails: number }) {
   return {
     id: user.id,
     username: user.username,
     emails: listEmailsOfUser(user.id),
+    max_emails: user.max_emails,
   }
 }
 
@@ -124,6 +126,12 @@ auth.post('/register', async (c) => {
     }
     if (e instanceof EmailTakenError) {
       return c.json({ error: '该邮箱已被占用' }, 409)
+    }
+    if (e instanceof EmailQuotaExceededError) {
+      return c.json(
+        { error: '已达邮箱数量上限', max_emails: e.maxEmails },
+        403,
+      )
     }
     throw e
   }

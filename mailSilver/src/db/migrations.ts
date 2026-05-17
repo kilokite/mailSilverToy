@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
   created_at    TEXT NOT NULL,
-  last_login_at TEXT
+  last_login_at TEXT,
+  max_emails    INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS user_emails (
@@ -120,6 +121,27 @@ function hasLegacySchema(): boolean {
   return userCols.has('prefix') || recipientCols.has('prefix')
 }
 
+function usersTableHasColumn(name: string): boolean {
+  const db = getDb()
+  const cols = db
+    .prepare(`PRAGMA table_info(users)`)
+    .all() as Array<{ name?: unknown }>
+  return cols.some((c) => c.name === name)
+}
+
+function migrateMaxEmailsColumn(): void {
+  if (usersTableHasColumn('max_emails')) return
+  const db = getDb()
+  db.exec(`ALTER TABLE users ADD COLUMN max_emails INTEGER NOT NULL DEFAULT 1`)
+  db.exec(
+    `UPDATE users
+        SET max_emails = MAX(
+          1,
+          (SELECT COUNT(*) FROM user_emails ue WHERE ue.user_id = users.id)
+        )`,
+  )
+}
+
 export function runMigrations(): void {
   const db = getDb()
   if (hasLegacySchema()) {
@@ -127,4 +149,5 @@ export function runMigrations(): void {
     db.exec(dropLegacySql)
   }
   db.exec(sql)
+  migrateMaxEmailsColumn()
 }

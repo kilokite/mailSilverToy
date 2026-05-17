@@ -92,6 +92,9 @@ export function Sidebar({
     [normalizedLocal, activeDomain],
   )
 
+  const atLimit = user.emails.length >= user.max_emails
+  const quotaLabel = `${user.emails.length}/${user.max_emails}`
+
   const copyText = useMemo(() => {
     if (mailboxFilter === "all") return user.emails.join("\n")
     return mailboxFilter
@@ -148,6 +151,7 @@ export function Sidebar({
           <div className="rounded-md border bg-background/60 p-2.5">
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
               收件邮箱
+              <span className="ml-1 tabular-nums text-foreground/70">({quotaLabel})</span>
             </p>
             <div className="mt-1.5 flex items-stretch gap-1">
               <select
@@ -185,6 +189,8 @@ export function Sidebar({
                 size="sm"
                 variant="outline"
                 className="h-7 flex-1 justify-center gap-1 text-xs"
+                disabled={atLimit}
+                title={atLimit ? `已达邮箱上限 (${quotaLabel})` : "添加邮箱"}
                 onClick={() => setAddDialogOpen(true)}
               >
                 <MailPlus className="h-3.5 w-3.5" />
